@@ -57,11 +57,15 @@ def main():
     if audio:cmd+=['-map','3:a:0','-c:a','libopus','-b:a','64k','-shortest']
     cmd+=['-c:v','libvpx','-deadline','realtime','-cpu-used','8','-threads','2','-b:v','1600k','-crf','12','-g','120','-lag-in-frames','0','-auto-alt-ref','0','-pix_fmt','yuv420p','-cluster_time_limit','1000','-f','webm',str(out)]
     meta=dict(source='live session X11 app windows',windows=windows,video=str(out),audio=bool(audio),started_at=time.time(),recording=True)
-    atomic(run/'recording.json',meta)
     with open(str(out)+'.log','w') as log:
         proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=log,stderr=log,pass_fds=(fd,) if audio else (),start_new_session=True)
         if audio:audio.stdout.close()
-        print('ĐANG QUAY WEBM: '+str(out)+(' + micro' if audio else ' (không âm thanh)'),flush=True)
+        warm_deadline=time.monotonic()+15
+        while proc.poll() is None and not stopped and (not out.exists() or out.stat().st_size==0) and time.monotonic()<warm_deadline:time.sleep(.1)
+        if proc.poll() is not None or not out.exists() or out.stat().st_size==0:
+            stopped=True;meta['recording']=False
+        atomic(run/'recording.json',meta)
+        print(('ĐANG QUAY WEBM: ' if meta['recording'] else 'LỖI KHỞI ĐỘNG WEBM: ')+str(out)+(' + micro' if audio else ' (không âm thanh)'),flush=True)
         while proc.poll() is None and not stopped:time.sleep(.2)
         if audio and audio.poll() is None:audio.terminate()
         if proc.poll() is None:

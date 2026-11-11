@@ -27,7 +27,7 @@ def hold(label,seconds):
  while time.monotonic()<until:send(label);pump(.08)
 def begin():
  hold('neutral',1.4);hold('fear',1.4)
- assert read(run/'status.json').get('action'),'Expected action to start'
+ assert read(run/'status.json').get('action'),read(run/'status.json')
 def record(fault,**kw):
  result=dict(fault=fault,source='injected component input + actual simulation odom',**kw);results.append(result);atomic(run/'runtime_faults.json',results);print(result,flush=True)
 def service(pause):
@@ -38,8 +38,9 @@ try:
  hold('neutral',1.4);hold('fear',6.)
  ends=[json.loads(l) for l in (run/'control.jsonl').read_text().splitlines() if 'ACTION_END' in l]
  s=read(run/'status.json');record('hold_same_expression',pass_=not s.get('action') and len(ends)==1,end_count=len(ends),state=s['state'])
- begin();start=time.monotonic();resp=service(True);pump(1.1);s=read(run/'status.json')
- paused_stopped=s.get('v')==s.get('w')==0 and not s.get('action');service(False);hold('fear',1.5)
+ begin();start=time.monotonic();resp=service(True);hold('fear',1.2);s=read(run/'status.json')
+ events=[json.loads(l) for l in (run/'control.jsonl').read_text().splitlines() if 'ACTION_END' in l]
+ paused_stopped=s.get('v')==s.get('w')==0 and not s.get('action') and events[-1]['reason'] in ('ODOM_STALE','CLOCK_STALE','ROBOT_NOT_PREPARED');service(False);hold('fear',1.5)
  record('sim_pause_resume',pass_=paused_stopped and not read(run/'status.json').get('action'),pause_response=resp.stdout,reason=s['reason'],cmd_zero=s.get('v')==s.get('w')==0)
  begin();start=time.monotonic();msg=HazardDetectionVector();d=HazardDetection();d.type=HazardDetection.BUMP;msg.detections=[d]
  for _ in range(10):hazpub.publish(msg);send('fear');pump(.05)

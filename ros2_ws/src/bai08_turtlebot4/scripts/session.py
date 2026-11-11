@@ -14,6 +14,7 @@ def main():
         print('Bài 08 domain '+domain+' đang chạy. Đóng phiên cũ hoặc chọn BAI08_DOMAIN khác.',file=sys.stderr)
         return 2
     session=time.strftime('%Y%m%d_%H%M%S')+'_'+str(os.getpid());run=root/'runs'/session;run.mkdir(parents=True)
+    (run/'STOP').touch()  # Startup stays disarmed until robot/model/recorder readiness.
     video=root/'results'/('demo_'+session+'.webm');(root/'results').mkdir(exist_ok=True)
     # Whitelist environment: no inherited ROS/Jazzy, Python or Ignition overlay.
     env={k:v for k,v in os.environ.items() if k in ('HOME','USER','DISPLAY','XAUTHORITY','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS','LANG','LC_ALL','PATH')}
@@ -49,6 +50,17 @@ def main():
         try:p.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             os.killpg(p.pid,signal.SIGTERM);p.wait(timeout=15)
+    lock_cache=[0.,False]
+    def locked():
+        if a.headless:return False
+        if time.monotonic()-lock_cache[0]<1:return lock_cache[1]
+        check=subprocess.run(['gdbus','call','--session','--dest','org.gnome.ScreenSaver','--object-path','/org/gnome/ScreenSaver','--method','org.gnome.ScreenSaver.GetActive'],env=env,capture_output=True,text=True,timeout=3)
+        lock_cache[:]=[time.monotonic(),'(true,)' in check.stdout]
+        return lock_cache[1]
+    activated=False
+    def activate():
+        atomic(run/'ui_command.json',dict(session=session,seq=time.monotonic_ns(),command='START',monotonic=time.monotonic()))
+        print('CONTROL READY: giữ Neutral để rearm; mỗi biểu cảm chỉ một action.',flush=True)
     result=0
     try:
         print('Run: '+str(run)+'\nDomain '+domain+' | '+env['IGN_PARTITION'],flush=True)
@@ -66,17 +78,24 @@ def main():
             status=read(run/'status.json')
             robot=status.get('prepared') and status.get('odom_age',99)<.5 and status.get('clock_age',99)<.6
             model=a.component_test or read(run/'model_ready.json').get('ready')
-            if robot and model:
+            if robot and model and not locked():
+                if not a.headless and __import__('shutil').which('gnome-session-inhibit'):
+                    spawn('inhibit_idle',['gnome-session-inhibit','--inhibit','idle','--reason','Bai08 webcam demo and WebM recording','sleep','infinity'])
                 print('ROBOT + MODEL READY. '+('COMPONENT TEST INPUT ONLY' if a.component_test else 'Giữ Neutral trước webcam để rearm.'),flush=True)
                 atomic(run/'READY.json',dict(monotonic=time.monotonic(),robot=True,model=bool(model),source=meta['source']))
                 if not a.no_record and not a.headless:
                     cmd=['/usr/bin/python3',str(package/'scripts/record_demo.py'),str(run),str(video),'--launch-sid',str(sim.pid),'--panel-sid',str(panel.pid)]
                     if a.microphone:cmd+=['--microphone',a.microphone]
                     spawn('recorder',cmd)
+                else:
+                    activate();activated=True
                 break
             if time.monotonic()>deadline:raise TimeoutError('READY timeout 240s')
             time.sleep(.2)
         while not stopped:
+            if locked():raise RuntimeError('Màn hình đã khóa: STOP và finalize WebM. Mở khóa rồi chạy lại phiên mới.')
+            if not activated and read(run/'recording.json').get('recording'):
+                activate();activated=True
             for name,p in procs.items():
                 if p.poll() is not None:raise RuntimeError(name+' exited; see '+str(run/(name+'.log')))
             time.sleep(.1)
@@ -87,7 +106,7 @@ def main():
         # Controller keeps publishing zero; preserve windows until WebM finalized.
         time.sleep(1.)
         finish('recorder',timeout=220)
-        finish('worker');finish('panel',signal.SIGTERM);finish('simulation',timeout=45)
+        finish('worker');finish('panel',signal.SIGTERM);finish('simulation',timeout=45);finish('inhibit_idle',signal.SIGTERM)
         for p in procs.values():
             try:os.killpg(p.pid,signal.SIGTERM)
             except ProcessLookupError:pass

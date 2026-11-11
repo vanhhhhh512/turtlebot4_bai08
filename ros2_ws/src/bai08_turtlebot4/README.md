@@ -52,7 +52,7 @@ bash start_demo.sh
 
 Đóng phiên cũ trước khi mở lại. Mỗi lần tạo run ID, ROS domain 108, IGN partition riêng và file WebM mới. Lock domain chống chạy hai phiên. Có thể đặt `BAI08_DOMAIN=109`. Chỉ chạy môi trường Humble sạch; launcher loại bỏ overlay Python/ROS kế thừa. Model assets phải được chuẩn bị trước, nếu thiếu thì worker báo lỗi, không READY giả.
 
-Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
+Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật chờ Neutral sau khi FFmpeg thực sự tạo file. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
 
 Đưa trọn mặt vào khung, giữ Neutral → thấy READY → tạo một biểu cảm và giữ đến khi action xong. Surprise cần khoảng 18 s ở 0.35 rad/s. Mất mặt/Neutral/đổi nhãn sẽ hủy action; muốn thử lại phải rearm. Nút STOP dừng robot; START chỉ bật lại chế độ chờ Neutral. **Ctrl+C một lần**: latch STOP ngay, chờ thấy robot dừng, FFmpeg nhận `q` để finalize, decode video, rồi mới đóng đúng nhóm process phiên này. Không kill rộng hoặc kill -9 recorder.
 

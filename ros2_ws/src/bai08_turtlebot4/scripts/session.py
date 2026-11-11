@@ -8,7 +8,11 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--component-test',action='store_true');ap.add_argument('--no-record',action='store_true');ap.add_argument('--headless',action='store_true');ap.add_argument('--camera',type=int,default=0);ap.add_argument('--microphone');a=ap.parse_args()
     package=Path(__file__).resolve().parents[1];root=package.parents[2]
     domain=os.environ.get('BAI08_DOMAIN','108')
-    lock=open('/tmp/bai08_domain_'+domain+'.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    lock=open('/tmp/bai08_domain_'+domain+'.lock','a')
+    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BlockingIOError:
+        print('Bài 08 domain '+domain+' đang chạy. Đóng phiên cũ hoặc chọn BAI08_DOMAIN khác.',file=sys.stderr)
+        return 2
     session=time.strftime('%Y%m%d_%H%M%S')+'_'+str(os.getpid());run=root/'runs'/session;run.mkdir(parents=True)
     video=root/'results'/('demo_'+session+'.webm');(root/'results').mkdir(exist_ok=True)
     # Whitelist environment: no inherited ROS/Jazzy, Python or Ignition overlay.

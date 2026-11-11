@@ -24,3 +24,5 @@ de_bai.md
 prompt_chat_moi.txt
 tools/checkpoint.py
 tools/ros_probe.sh
+tools/build_report.py
+tools/benchmark_photo.py

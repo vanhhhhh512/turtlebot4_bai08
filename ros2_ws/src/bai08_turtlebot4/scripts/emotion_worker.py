@@ -16,6 +16,9 @@ def main():
     run=Path(args.run);run.mkdir(parents=True,exist_ok=True)
     stop=threading.Event()
     for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
+    required=('facial_expression_model_weights.onnx','haarcascade_frontalface_default.xml','haarcascade_eye.xml')
+    cache=Path(os.environ.get('DEEPFACE_HOME',str(Path.home())))/'.deepface/weights'
+    if any(not (cache/n).is_file() for n in required):raise RuntimeError('Missing model assets; run tools/prepare_model.py before demo')
     cap=cv2.VideoCapture(args.camera,cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,640);cap.set(cv2.CAP_PROP_FRAME_HEIGHT,480);cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
     if not cap.isOpened():raise RuntimeError('Cannot open real webcam '+str(args.camera))
@@ -38,9 +41,6 @@ def main():
     seq=0;prev_box=None;prev_stamp=0
     try:
         # Downloads should be completed by prepare_model.py before demo.
-        required=('facial_expression_model_weights.onnx','haarcascade_frontalface_default.xml','haarcascade_eye.xml')
-        cache=Path(os.environ['DEEPFACE_HOME'])/'.deepface/weights'
-        if any(not (cache/n).is_file() for n in required):raise RuntimeError('Missing model assets; run tools/prepare_model.py before demo')
         model=DeepFace.build_model(model_name='Emotion',task='facial_attribute')
         DeepFace.analyze(np.zeros((48,48,3),dtype=np.uint8),actions=['emotion'],detector_backend='skip',enforce_detection=False,silent=True)
         atomic(run/'model_ready.json',dict(ready=True,model='DeepFace Emotion ONNX',wall=time.time(),pid=os.getpid()))

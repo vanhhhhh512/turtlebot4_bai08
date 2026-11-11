@@ -2,7 +2,7 @@
 
 Đỗ Việt Anh — 23020719 — K68E-RE. Ubuntu 22.04, ROS 2 Humble, Gazebo Fortress, TurtleBot 4 Standard.
 
-Webcam thật → DeepFace 0.0.104 Emotion ONNX CPU → lọc theo thời gian → sự kiện hữu hạn → `/cmd_vel` → odom. Worker ML dùng venv riêng; controller ROS dùng Python hệ thống, timer 20 Hz theo wall time. Không cần Nav2. Bài 08 là tên nối tiếp Bài 07, đề chưa quy định số chính thức.
+Webcam thật → YuNet detector + DeepFace 0.0.104 Emotion ONNX CPU → lọc theo thời gian → sự kiện hữu hạn → `/cmd_vel` → odom. Worker ML dùng venv riêng; controller ROS dùng Python hệ thống, timer 20 Hz theo wall time. Không cần Nav2. Bài 08 là tên nối tiếp Bài 07, đề chưa quy định số chính thức.
 
 | Nhãn | v (m/s) | ω (rad/s) | Đích odom |
 |---|---:|---:|---|
@@ -13,7 +13,7 @@ Webcam thật → DeepFace 0.0.104 Emotion ONNX CPU → lọc theo thời gian �
 | surprise | 0 | +0.35 | tích lũy 2π rad |
 | fear | +0.10 | 0 | tiến 0.23 m |
 
-Giữ cùng biểu cảm không tạo hành động thứ hai. Giữ Neutral đủ 0.6 s để rearm. Confidence tối thiểu 0.55, margin 0.18, EMA α=0.55, hold 0.65 s. Đây là tham số thiết kế đã kiểm tra logic; score không phải accuracy. Neutral/mất mặt/nhiều mặt/disgust/điểm thấp/đổi nhãn dừng và hủy action. Prediction timeout 0.9 s, odom 0.5 s, clock 0.6 s; GUI STOP là latch độc lập ML. START cần Neutral mới. Session/seq/capture timestamp ngăn phát lại.
+Giữ cùng biểu cảm không tạo hành động thứ hai. Giữ Neutral đủ 0.6 s để rearm. Confidence tối thiểu 0.55, margin 0.18, EMA α=0.55, hold 0.65 s. Đây là tham số thiết kế đã kiểm tra logic; score không phải accuracy. Neutral/mất mặt/nhiều mặt/disgust/điểm thấp/đổi nhãn dừng và hủy action đang chạy. Khi chưa có action, một permit Neutral chưa sử dụng được giữ tối đa 3 s qua scores thấp để người dùng chuyển nét mặt; vận tốc vẫn bằng zero và nhãn mới vẫn phải đủ confidence/margin/hold. Permit hết hạn hoặc lỗi mất mặt/watchdog cần Neutral mới. Không resume action đã hủy. Prediction timeout 0.9 s, odom 0.5 s, clock 0.6 s; GUI STOP là latch độc lập ML. START cần Neutral mới. Session/seq/capture timestamp ngăn phát lại.
 
 ## Cài đặt
 
@@ -33,7 +33,7 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH .venv_emotion/bin/pip install \
 env -u PYTHONPATH -u LD_LIBRARY_PATH .venv_emotion/bin/python tools/prepare_model.py
 ```
 
-Weights được tải từ nguồn chính thức, kiểm SHA256 trước dùng, không có weights trong Git. Không cần TensorFlow/PyTorch. Không đổi Python dependency toàn cục. GUI dùng Pillow hệ thống, không import venv ML. Micro tùy chọn cần `pulseaudio-utils` và tên thiết bị `pactl list short sources`.
+Weights Emotion/YuNet và Haar XML được tải từ nguồn chính thức, kiểm SHA256 trước dùng, không có weights trong Git. Không cần TensorFlow/PyTorch. Không đổi Python dependency toàn cục. GUI dùng Pillow hệ thống, không import venv ML. Micro tùy chọn cần `pulseaudio-utils` và tên thiết bị `pactl list short sources`.
 
 Create 3 underlay cần bản cấu hình mô phỏng đã kiểm tra. Script dưới clone source công khai đã pin rồi chỉ build hai package Create3; không dùng artefact private:
 
@@ -78,4 +78,4 @@ Chỉ chế độ `--component-test` mới nhận scores tổng hợp. Mặc đ�
 
 ## Giới hạn
 
-Haar frontal-face có thể mất mặt khi nghiêng hoặc ánh sáng kém. Tracker bbox phát hiện bước nhảy lớn, không xác thực danh tính hay phát hiện mọi lần đổi người cùng vị trí. Fear/Sad có thể nhầm; cần người thật tạo biểu cảm và ghi nhãn định tạo riêng trước khi đánh giá. Không suy luận trạng thái tâm lý thật. Repository source không chứa báo cáo, camera, video, model, log hoặc dữ liệu bài cũ.
+Default YuNet ONNX thay Haar sau kiểm tra 19 ảnh webcam thật lưu lại: YuNet tìm một mặt ở 18 ảnh, Haar ở 7 ảnh; phép thử này không đo accuracy emotion. YuNet cũng đã thử ảnh nền không mặt và ảnh ghép hai mặt. Có thể dùng `--detector opencv` để tái tạo backend trước. Detector vẫn có thể mất mặt khi che hoặc nghiêng nhiều. Tracker bbox phát hiện bước nhảy lớn, không xác thực danh tính hay phát hiện mọi lần đổi người cùng vị trí. Fear/Sad có thể nhầm; cần người thật tạo biểu cảm và ghi nhãn định tạo riêng trước khi đánh giá. Không suy luận trạng thái tâm lý thật. Repository source không chứa báo cáo, camera, video, model, log hoặc dữ liệu bài cũ.

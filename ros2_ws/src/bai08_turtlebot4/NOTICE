@@ -4,3 +4,4 @@ ROS/TurtleBot/Create3 runtime is supplied separately by installed upstream packa
 DeepFace library is MIT: https://github.com/serengil/deepface/blob/master/LICENSE
 Emotion ONNX weights are downloaded from the author's published model repository; not redistributed in this source repository. See https://github.com/serengil/deepface_models and respect original training data/model terms. No license grant for model weights is asserted here.
 OpenCV Haar XML detector assets are downloaded from OpenCV 4.9.0 and retain upstream notices; not redistributed here.
+YuNet ONNX is downloaded from OpenCV Zoo, not redistributed. Upstream license: https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet .

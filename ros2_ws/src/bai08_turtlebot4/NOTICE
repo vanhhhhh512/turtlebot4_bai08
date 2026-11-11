@@ -1,0 +1,6 @@
+New exercise source: Do Viet Anh (2026), Apache-2.0.
+Arena/readiness techniques adapted from the author's earlier TurtleBot exercises; no previous evidence or results included.
+ROS/TurtleBot/Create3 runtime is supplied separately by installed upstream packages and a pinned public build script. Their original Apache/BSD licenses remain in upstream repositories.
+DeepFace library is MIT: https://github.com/serengil/deepface/blob/master/LICENSE
+Emotion ONNX weights are downloaded from the author's published model repository; not redistributed in this source repository. See https://github.com/serengil/deepface_models and respect original training data/model terms. No license grant for model weights is asserted here.
+OpenCV Haar XML detector assets are downloaded from OpenCV 4.9.0 and retain upstream notices; not redistributed here.

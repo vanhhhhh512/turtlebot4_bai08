@@ -1,0 +1,45 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Global Options:
+    Background Color: 242; 242; 242
+    Fixed Frame: odom
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid (m)
+      Enabled: true
+      Cell Size: 0.5
+      Plane Cell Count: 20
+    - Class: rviz_default_plugins/RobotModel
+      Name: TurtleBot4
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Durability Policy: Transient Local
+    - Class: rviz_default_plugins/Odometry
+      Name: Measured odometry
+      Enabled: true
+      Topic:
+        Value: /odom
+        Reliability Policy: Best Effort
+      Keep: 20
+      Position Tolerance: 0.03
+      Angle Tolerance: 0.15
+      Shape:
+        Value: Arrow
+        Shaft Length: 0.12
+        Shaft Radius: 0.01
+        Head Length: 0.06
+        Head Radius: 0.03
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 4
+      Pitch: 0.8
+      Yaw: 0.8
+      Focal Point: {X: 0, Y: 0, Z: 0}
+Window Geometry:
+  Width: 850
+  Height: 650

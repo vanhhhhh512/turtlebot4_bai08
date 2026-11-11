@@ -1,0 +1,4 @@
+# Applied only to motion_control inside this exercise's Gazebo launch.
+/motion_control:
+  ros__parameters:
+    safety_override: backup_only

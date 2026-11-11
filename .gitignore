@@ -1,0 +1,26 @@
+# Source-only publication. Stage by allowlist.
+.venv*/
+.model_cache/
+underlay/
+verification/
+runs/
+results/
+report/
+*.pdf
+*.tex
+*.zip
+*.webm
+*.png
+*.jpg
+*.onnx
+*.log
+__pycache__/
+*.pyc
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+todo.md
+de_bai.md
+prompt_chat_moi.txt
+tools/checkpoint.py
+tools/ros_probe.sh

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, math, os, sys, time
+import os, sys, time
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
@@ -7,6 +7,7 @@ from PIL import Image, ImageTk, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bai08_turtlebot4.ipc import atomic, read
+from bai08_turtlebot4.presentation import StatusPresenter, TrajectoryPlot
 
 run = Path(sys.argv[1])
 session = run.name
@@ -27,8 +28,16 @@ header = ttk.Label(
     foreground="#0072BD",
 )
 header.pack(pady=12)
-info = ttk.Label(root, text="ĐANG CHUẨN BỊ CAMERA VÀ ROBOT", font=("DejaVu Sans", 15, "bold"))
-info.pack()
+info_area = ttk.Frame(root, height=50)
+info_area.pack(fill="x")
+info_area.pack_propagate(False)
+info = ttk.Label(info_area, text="ĐANG CHUẨN BỊ CAMERA VÀ ROBOT", font=("DejaVu Sans", 15, "bold"))
+info.configure(anchor="center", width=75, wraplength=1060, justify="center",
+               font=("DejaVu Sans", 14, "bold"))
+info.pack(fill="both", expand=True)
+presenter = StatusPresenter()
+footer = ttk.Frame(root)
+footer.pack(side="bottom", fill="x", padx=18, pady=12)
 body = ttk.Frame(root)
 body.pack(fill="both", expand=True, padx=16, pady=12)
 left = ttk.Frame(body)
@@ -38,9 +47,28 @@ cam.pack(fill="both", expand=True)
 right = ttk.Frame(body)
 right.pack(side="right", fill="y", padx=14)
 bars = {}
+vote_labels = {}
+show_votes = False
+
+
+def set_votes(visible):
+    global show_votes
+    show_votes = visible
+    update_votes(read(run / "status.json"))
+
+
+def update_votes(status):
+    for label, widget in vote_labels.items():
+        text = f"{status.get('vote_counts', {}).get(label, 0)}/57" if show_votes else ""
+        if widget.cget("text") != text:
+            widget.configure(text=text)
+
+
+root.bind("<KeyPress-1>", lambda event: set_votes(True))
+root.bind("<KeyPress-2>", lambda event: set_votes(False))
 for label in ("happy", "sad", "neutral", "angry", "surprise", "fear", "disgust"):
     row = ttk.Frame(right)
-    row.pack(fill="x", pady=2)
+    row.pack(fill="x", pady=1)
     lab = ttk.Label(row, text=label, width=9)
     lab.pack(side="left")
     bar = ttk.Progressbar(row, length=130, maximum=100)
@@ -48,14 +76,16 @@ for label in ("happy", "sad", "neutral", "angry", "surprise", "fear", "disgust")
     val = ttk.Label(row, text="0.0%", width=7)
     val.pack(side="left")
     bars[label] = (bar, val)
-plot = tk.Canvas(right, width=310, height=270, bg="white", highlightthickness=0)
-plot.pack(pady=12)
+    count = ttk.Label(row, text="", width=5, anchor="e")
+    count.pack(side="left")
+    vote_labels[label] = count
+plot = tk.Canvas(right, width=350, height=306, bg="white", highlightthickness=0)
+plot.pack(pady=8)
+trajectory_plot = TrajectoryPlot(plot)
 detail = ttk.Label(right, text="", wraplength=310)
 detail.pack()
 progress = ttk.Progressbar(right, length=300, maximum=1)
-progress.pack(pady=8)
-footer = ttk.Frame(root)
-footer.pack(fill="x", padx=18, pady=12)
+progress.pack(pady=5)
 sequence = 0
 
 
@@ -92,7 +122,7 @@ tk.Button(
     font=("DejaVu Sans", 14, "bold"),
     width=12,
 ).pack(side="left", padx=16)
-record = ttk.Label(footer, text="Chưa quay • không thu micro")
+record = ttk.Label(footer, text="Chưa quay / đã dừng")
 record.pack(side="right")
 
 
@@ -100,52 +130,10 @@ def refresh():
     p = read(run / "prediction.json")
     s = read(run / "status.json")
     now = time.monotonic()
-    fresh = now - s.get("monotonic", 0) < 1
-    action = s.get("action") or {}
-    raw_label = (p.get("raw_label") or "").upper()
-    reason = s.get("reason")
-    errors = {
-        "NO_FACE": "ĐƯA TRỌN KHUÔN MẶT VÀO CAMERA",
-        "FACE_COUNT_MISMATCH": "CHỈ ĐỂ MỘT KHUÔN MẶT TRONG CAMERA",
-        "MULTIPLE_FACES": "CHỈ ĐỂ MỘT KHUÔN MẶT TRONG CAMERA",
-        "FACE_CHANGED": "KHUÔN MẶT THAY ĐỔI — GIỮ NEUTRAL ĐỂ SẴN SÀNG",
-        "CAMERA_ERROR": "MẤT CAMERA — KIỂM TRA KẾT NỐI WEBCAM",
-        "INFERENCE_ERROR": "LỖI NHẬN DIỆN — ROBOT ĐÃ DỪNG",
-        "MALFORMED_PREDICTION": "DỮ LIỆU NHẬN DIỆN LỖI — ROBOT ĐÃ DỪNG",
-        "OUTSIDE_SET": "DISGUST — ROBOT DỪNG; GIỮ NEUTRAL ĐỂ TIẾP TỤC",
-        "LOW_CONFIDENCE": "BIỂU CẢM CHƯA RÕ — GIỮ NEUTRAL ĐỂ THỬ LẠI",
-        "LOW_CONFIDENCE_WAIT_STABLE": "BIỂU CẢM CHƯA RÕ — NHÌN THẲNG VÀ GIỮ NÉT MẶT",
-        "ODOM_STALE": "MẤT PHẢN HỒI ROBOT — ĐÃ DỪNG ĐIỀU KHIỂN",
-        "CLOCK_STALE": "MÔ PHỎNG ĐANG TẠM DỪNG — CHỜ KẾT NỐI",
-        "PREDICTION_STALE": "ĐANG CHỜ HÌNH CAMERA MỚI — ROBOT DỪNG",
-        "OTHER_CMD_PUBLISHER": "TRÙNG BỘ ĐIỀU KHIỂN — CẦN ĐÓNG PHIÊN CŨ",
-        "OTHER_CLOCK_PUBLISHER": "TRÙNG MÔ PHỎNG — CẦN ĐÓNG PHIÊN CŨ",
-        "ROBOT_NOT_PREPARED": "ĐANG CHUẨN BỊ ROBOT — CHỜ SẴN SÀNG",
-        "HAZARD": "ROBOT GẶP VẬT CẢN — ĐÃ DỪNG",
-        "ACTION_TIMEOUT": "HẾT THỜI GIAN HÀNH ĐỘNG — ROBOT ĐÃ DỪNG",
-        "ODOM_JUMP": "PHẢN HỒI VỊ TRÍ THAY ĐỔI — ROBOT ĐÃ DỪNG",
-        "BAD_ODOM": "PHẢN HỒI VỊ TRÍ LỖI — ROBOT ĐÃ DỪNG",
-        "REARM_WINDOW_EXPIRED": "HẾT LƯỢT CHỜ — GIỮ NEUTRAL ĐỂ SẴN SÀNG",
-    }
-    if not fresh:
-        message = "ĐANG CHỜ KẾT NỐI ROBOT"
-    elif action:
-        message = "ĐÃ XÁC NHẬN: " + action["label"].upper() + " — ROBOT ĐANG CHẠY"
-    elif not s.get("enabled"):
-        message = "ĐÃ DỪNG — NHẤN START ĐỂ TIẾP TỤC"
-    elif reason in errors:
-        message = errors[reason]
-    elif reason == "COMPLETED":
-        message = "HOÀN THÀNH — GIỮ NEUTRAL ĐỂ CHUẨN BỊ LƯỢT MỚI"
-    elif s.get("state") == "WAIT_NEUTRAL":
-        message = "GIỮ NEUTRAL ĐỂ CHUẨN BỊ LƯỢT MỚI"
-    elif s.get("armed") and raw_label and raw_label != "NEUTRAL":
-        message = "CHỜ XÁC NHẬN: " + raw_label
-    elif s.get("armed"):
-        message = "SẴN SÀNG — TẠO BIỂU CẢM ĐỂ ĐIỀU KHIỂN"
-    else:
-        message = "GIỮ NEUTRAL ĐỂ SẴN SÀNG"
-    info.configure(text=message)
+    message = presenter.message(s, now)
+    if info.cget("text") != message:
+        info.configure(text=message)
+    update_votes(s)
     try:
         im = Image.open(run / "camera.jpg").convert("RGB")
         draw = ImageDraw.Draw(im)
@@ -167,61 +155,17 @@ def refresh():
         bar["value"] = score
         val.configure(text=f"{score:.1f}%")
     a = s.get("action") or {}
-    guide = (
-        "Đang thực hiện; giữ Neutral 0.8 s hoặc STOP để dừng"
-        if a else "Sẵn sàng nhận biểu cảm"
-        if s.get("armed") else "Giữ Neutral để chuẩn bị lượt mới"
-    )
     progress["value"] = a.get("progress", 0)
-    detail.configure(
-        text=f"v = {s.get('v',0):.2f} m/s   ω = {s.get('w',0):.2f} rad/s\nAction: {a.get('label','—')}   #{a.get('id','—')}\nΔs = {a.get('distance',0):.3f} m   Δyaw = {a.get('yaw',0):.3f} rad\n{guide}\nModel: DeepFace Emotion ONNX CPU"
-    )
-    plot.delete("all")
-    plot.create_text(155, 12, text="Quỹ đạo odom thực • x/y (m)", fill="#222")
-    points = s.get("path", [])
-    pose = s.get("pose")
-    if points:
-        xs = [x for x, y in points]
-        ys = [y for x, y in points]
-        cx = (max(xs) + min(xs)) / 2
-        cy = (max(ys) + min(ys)) / 2
-        span = max(0.8, max(xs) - min(xs), max(ys) - min(ys)) * 1.3
-        scale = 210 / span
-
-        def xy(x, y):
-            return (155 + (x - cx) * scale, 140 - (y - cy) * scale)
-
-        for i in range(-2, 3):
-            q = i * span / 4
-            x = 155 + q * scale
-            y = 140 - q * scale
-            plot.create_line(x, 35, x, 245, fill="#ddd")
-            plot.create_text(x, 256, text=f"{cx+q:.1f}", font=("DejaVu Sans", 8))
-            plot.create_line(50, y, 260, y, fill="#ddd")
-            plot.create_text(25, y, text=f"{cy+q:.1f}", font=("DejaVu Sans", 8))
-        if len(points) > 1:
-            plot.create_line(
-                *[v for x, y in points for v in xy(x, y)], fill="#0072BD", width=2
-            )
-        x, y = xy(*points[0])
-        plot.create_oval(x - 4, y - 4, x + 4, y + 4, fill="#77AC30")
-        if pose:
-            x, y = xy(*pose[:2])
-            plot.create_line(
-                x,
-                y,
-                x + 18 * math.cos(pose[2]),
-                y - 18 * math.sin(pose[2]),
-                arrow="last",
-                fill="#D95319",
-                width=3,
-            )
+    text = (f"v = {s.get('v',0):.2f} m/s   ω = {s.get('w',0):.2f} rad/s\n"
+            f"Action: {a.get('label','—')}   #{a.get('id','—')}\n"
+            f"Δs = {a.get('distance',0):.3f} m   Δyaw = {a.get('yaw',0):.3f} rad")
+    if detail.cget("text") != text:
+        detail.configure(text=text)
+    trajectory_plot.update(s)
     rec = read(run / "recording.json")
-    record.configure(
-        text=("● ĐANG QUAY WEBM" if rec.get("recording") else "Chưa quay / đã dừng")
-        + " • "
-        + ("có micro" if rec.get("audio") else "không thu micro")
-    )
+    text = "● ĐANG QUAY WEBM" if rec.get("recording") else "Chưa quay / đã dừng"
+    if record.cget("text") != text:
+        record.configure(text=text)
     root.after(100, refresh)
 
 

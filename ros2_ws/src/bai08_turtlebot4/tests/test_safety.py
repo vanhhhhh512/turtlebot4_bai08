@@ -227,7 +227,10 @@ class Safety(unittest.TestCase):
 
 
 class VoteSafety(unittest.TestCase):
-    frame = Safety.frame
+    def frame(self, label="neutral", **kw):
+        # Exercise the <=60% fallback, independently of the immediate branch.
+        kw.setdefault("scores", {k: .60 if k == label else .40/6 for k in LABELS})
+        return Safety.frame(self, label, **kw)
     stable = Safety.stable
 
     def setUp(self):

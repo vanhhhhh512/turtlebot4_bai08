@@ -89,9 +89,9 @@ for fault in fault_names:
     deadline = start + 2.5
     while time.monotonic() < deadline:
         # Persistent evidence is distinct from a one-frame spike or stale packet.
-        if fault == "neutral" and vote_mode:
-            send("neutral")
-        elif fault == "low_confidence":
+        # A single >60% Neutral now stops immediately. Sending more Neutral
+        # here would intentionally rearm, invalidating the no-resume check.
+        if fault == "low_confidence":
             send("fear", scores={k: 1 / 7 for k in LABELS})
         elif fault == "change_label":
             send("angry")

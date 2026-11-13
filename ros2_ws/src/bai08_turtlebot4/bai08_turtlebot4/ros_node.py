@@ -11,6 +11,7 @@ from irobot_create_msgs.msg import HazardDetectionVector
 from std_msgs.msg import String
 from .core import Controller
 from .ipc import atomic, read
+from .trajectory import Trajectory
 
 
 class Motion(Node):
@@ -46,6 +47,7 @@ class Motion(Node):
         self.last_clock = None
         self.last_command = None
         self.path = []
+        self.trajectory = Trajectory()
         self.hazard_types = []
         self.tick_count = 0
         self.cmd_seq = -1
@@ -79,6 +81,10 @@ class Motion(Node):
         yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
         x, y = p.position.x, p.position.y
         self.core.odom(x, y, yaw, m.twist.twist.linear.x, m.twist.twist.angular.z, now)
+        if not all(math.isfinite(v) for v in
+                   (x, y, yaw, m.twist.twist.linear.x, m.twist.twist.angular.z)):
+            return
+        self.trajectory.observe(self.core.pose, now, self.core.action)
         self.odom_log.write(
             json.dumps(
                 dict(
@@ -133,6 +139,7 @@ class Motion(Node):
         self.publish(v, w)
         while self.core.events:
             e = self.core.events.pop(0)
+            self.trajectory.event(e, self.core.pose)
             e.update(wall=time.time(), session=self.session,
                      source=p.get("source") if isinstance(p, dict) else None)
             self.log.write(json.dumps(e) + "\n")
@@ -163,13 +170,17 @@ class Motion(Node):
             pose=self.core.pose,
             measured=getattr(self.core, "measured", None),
             action=self.core.action,
+            confirmation=self.core.confirmation,
             hazards=self.hazard_types,
             cmd_publishers=len(self.get_publishers_info_by_topic("/cmd_vel")),
             clock_publishers=self.clock_publishers,
         )
         self.log.write(json.dumps(dict(event="CONTROL", **status)) + "\n")
         if self.tick_count % 2 == 0:
-            atomic(self.run / "status.json", dict(**status, path=self.path))
+            atomic(self.run / "status.json", dict(
+                **status, path=self.path, trajectory=self.trajectory.segments,
+                trajectory_markers=self.trajectory.markers,
+                trajectory_revision=self.trajectory.revision))
 
 
 def main():

@@ -10,6 +10,7 @@ DEFAULT = dict(
     vote_min=11,
     vote_confidence=0.40,
     vote_margin=0.06,
+    score_fast_threshold=0.60,
     neutral_stop_hold=0.80,
     vote_low_hold=0.50,
     confidence=0.55,
@@ -53,6 +54,7 @@ class Controller:
         self.armed, self.enabled = False, True
         self.armed_until = -1e9
         self.action = None
+        self.confirmation = None
         self.uncertain_since = None
         self.votes = deque(maxlen=int(self.cfg["vote_window"]))
         self.neutral_since = None
@@ -259,20 +261,40 @@ class Controller:
             self.cancel("MALFORMED_PREDICTION", now)
             return False
 
+    def decision(self, label, scores, branch, now, action_id=None):
+        """Audit the actual fresh prediction that confirmed a task."""
+        self.confirmation = dict(
+            label=label, score=scores[label], branch=branch,
+            seq=self.last_seq, frame_id=self.last_frame, capture_mono=self.capture_at,
+            action_id=action_id, monotonic=now, pose=self.pose,
+        )
+        self.emit("DECISION_ACCEPTED", now,
+                  **{k: v for k, v in self.confirmation.items() if k != "monotonic"})
+
     def vote_prediction(self, scores, order, neutral_confident, now):
-        """Accept one voted command from fresh frames, then lock its action."""
+        """One fresh score > .60 has priority; 11/57 remains the fallback."""
         label = order[0]
+        fast = scores[label] > self.cfg["score_fast_threshold"]
         accepted = (
             scores[label] >= self.cfg["vote_confidence"]
             and scores[label] - scores[order[1]] >= self.cfg["vote_margin"]
         )
+        self.votes.append((self.capture_at, label if accepted else None))
+        counts = Counter(k for _, k in self.votes if k is not None)
         if self.action:
             self.stable = self.action["label"]
+            if label == "neutral" and fast:
+                action_id = self.action["id"]
+                self.cancel("NEUTRAL", now)
+                self.decision(label, scores, "score_fast_path", now, action_id)
+                return
             if label == "neutral" and neutral_confident:
                 if self.neutral_since is None:
                     self.neutral_since = now
                 elif now - self.neutral_since >= self.cfg["neutral_stop_hold"]:
+                    action_id = self.action["id"]
                     self.cancel("NEUTRAL", now)
+                    self.decision(label, scores, "neutral_stop_hold", now, action_id)
                     return
             else:
                 self.neutral_since = None
@@ -283,9 +305,23 @@ class Controller:
             elif now - self.uncertain_since >= self.cfg["vote_low_hold"]:
                 self.cancel("LOW_CONFIDENCE", now)
             return
-        self.votes.append((self.capture_at, label if accepted else None))
-        counts = Counter(k for _, k in self.votes if k is not None)
         if not self.enabled or not self.healthy(now):
+            return
+        # No hold, EMA, rounded percentage or vote minimum gates this branch.
+        if fast:
+            if label == "neutral":
+                if not self.armed:
+                    self.decision(label, scores, "score_fast_path", now)
+                self.armed = True
+                self.armed_until = now + self.cfg["rearm_window"]
+                self.stable = "neutral"
+                self.state, self.reason = "READY", "NEUTRAL_REARMED"
+                self.speed = (0.0, 0.0)
+            elif self.armed:
+                self.stable = label
+                self.accept_action(label, scores, "score_fast_path", now)
+            else:
+                self.state, self.reason = "WAIT_NEUTRAL", "REQUIRE_NEUTRAL"
             return
         if not accepted:
             self.stable = None
@@ -293,12 +329,12 @@ class Controller:
             self.reason = "LOW_CONFIDENCE_WAIT_STABLE" if self.armed else "LOW_CONFIDENCE"
             return
         if not self.armed:
-            if counts["neutral"] >= self.cfg["vote_min"]:
+            if label == "neutral" and counts["neutral"] >= self.cfg["vote_min"]:
                 self.armed = True
                 self.armed_until = now + self.cfg["rearm_window"]
                 self.stable = "neutral"
                 self.state, self.reason = "READY", "NEUTRAL_REARMED"
-                self.votes.clear()
+                self.decision(label, scores, "vote_threshold", now)
             else:
                 self.state, self.reason = "WAIT_NEUTRAL", "REQUIRE_NEUTRAL"
             return
@@ -310,8 +346,12 @@ class Controller:
                 self.emit("VOTE_ACCEPTED", now, label=label, count=counts[label],
                           window=len(self.votes), threshold=self.cfg["vote_min"])
                 self.stable = label
-                self.start(label, now)
-                self.votes.clear()
+                self.accept_action(label, scores, "vote_threshold", now)
+
+    def accept_action(self, label, scores, branch, now):
+        self.decision(label, scores, branch, now, self.counter + 1)
+        self.start(label, now, {k: self.confirmation[k] for k in
+                              ("branch", "score", "seq", "frame_id", "capture_mono")})
 
     def healthy(self, now):
         return (
@@ -324,7 +364,7 @@ class Controller:
             and not self.external_clock
         )
 
-    def start(self, label, now):
+    def start(self, label, now, decision=None):
         if label not in ("happy", "sad", "angry", "fear", "surprise"):
             return
         self.counter += 1
@@ -339,6 +379,7 @@ class Controller:
             signed_distance=0.0,
             yaw=0.0,
             max_center_drift=0.0,
+            **(decision or {}),
         )
         self.armed = False
         self.state, self.reason = "EXECUTING", label

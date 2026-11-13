@@ -35,8 +35,6 @@ left = ttk.Frame(body)
 left.pack(side="left", fill="both", expand=True)
 cam = tk.Label(left, bg="white")
 cam.pack(fill="both", expand=True)
-caption = ttk.Label(left, text="Camera / bbox / prediction timestamp", wraplength=660)
-caption.pack(pady=6)
 right = ttk.Frame(body)
 right.pack(side="right", fill="y", padx=14)
 bars = {}
@@ -103,18 +101,12 @@ def refresh():
     s = read(run / "status.json")
     now = time.monotonic()
     fresh = now - s.get("monotonic", 0) < 1
-    votes = s.get("vote_counts", {})
-    candidate_votes = sorted(
-        ((k, n) for k, n in votes.items() if k != "neutral"),
-        key=lambda pair: pair[1], reverse=True,
-    )
-    vote_text = (
-        f" | {candidate_votes[0][0]}: {candidate_votes[0][1]}/{s.get('vote_min',11)} phiếu"
-        if candidate_votes and not s.get("action") else ""
-    )
     info.configure(
         text=(
-            (s.get("state", "LOADING") + " — " + s.get("reason", "WAIT_MODEL_ROBOT") + vote_text)
+            (s.get("state", "LOADING") + " — " + {
+                "WAIT_VOTES": "Sẵn sàng nhận biểu cảm",
+                "NEUTRAL_REARMED": "Sẵn sàng nhận biểu cảm",
+            }.get(s.get("reason"), s.get("reason", "WAIT_MODEL_ROBOT")))
             if fresh
             else "ERROR — ROS status stale / chờ khởi động"
         )
@@ -135,9 +127,6 @@ def refresh():
         cam.image = photo
     except (OSError, ValueError):
         pass
-    caption.configure(
-        text=f"Webcam {p.get('camera','?')} | frame {p.get('frame_id','?')} | {p.get('status','LOADING')}\nNhãn thô: {p.get('raw_label','—')} | ổn định: {s.get('stable') or '—'} | score ≠ accuracy\nDetector {p.get('detector','?')} | capture {p.get('capture_fps',0):.1f} FPS | inference {p.get('inference_ms',0):.0f} ms | tuổi frame {now-p.get('capture_mono',now):.2f} s"
-    )
     for k, (bar, val) in bars.items():
         score = p.get("scores", {}).get(k, 0) * 100
         bar["value"] = score
@@ -145,7 +134,7 @@ def refresh():
     a = s.get("action") or {}
     guide = (
         "Đang thực hiện; giữ Neutral 0.8 s hoặc STOP để dừng"
-        if a else f"Sẵn sàng: mỗi biểu cảm cần {s.get('vote_min',11)}/{s.get('vote_window',57)} frame"
+        if a else "Sẵn sàng nhận biểu cảm"
         if s.get("armed") else "Giữ Neutral để chuẩn bị lượt mới"
     )
     progress["value"] = a.get("progress", 0)

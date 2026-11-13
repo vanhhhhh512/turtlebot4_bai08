@@ -82,4 +82,4 @@ Default YuNet ONNX thay Haar sau kiểm tra 19 ảnh webcam thật lưu lại: Y
 
 Worker giới hạn mỗi ONNX session ở 2 intra-op/1 inter-op threads và tắt busy spinning, OpenCV 1 thread, để không tranh CPU với Gazebo. Đây là cùng model/weights, không thay nhãn hoặc scores bằng tay.
 
-WAIT_NEUTRAL báo cần Neutral mới dù raw label đã đúng. GUI hiển thị phiếu của biểu cảm đang chờ; nhãn chốt giữ nguyên trong action.
+WAIT_NEUTRAL báo cần Neutral mới dù raw label đã đúng. GUI giữ nhãn chốt trong action; thông tin phiếu và chẩn đoán camera chỉ lưu trong log.

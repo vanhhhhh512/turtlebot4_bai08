@@ -27,7 +27,7 @@ header = ttk.Label(
     foreground="#0072BD",
 )
 header.pack(pady=12)
-info = ttk.Label(root, text="LOADING — chờ model và robot", font=("DejaVu Sans", 13))
+info = ttk.Label(root, text="ĐANG CHUẨN BỊ CAMERA VÀ ROBOT", font=("DejaVu Sans", 15, "bold"))
 info.pack()
 body = ttk.Frame(root)
 body.pack(fill="both", expand=True, padx=16, pady=12)
@@ -101,16 +101,25 @@ def refresh():
     s = read(run / "status.json")
     now = time.monotonic()
     fresh = now - s.get("monotonic", 0) < 1
-    info.configure(
-        text=(
-            (s.get("state", "LOADING") + " — " + {
-                "WAIT_VOTES": "Sẵn sàng nhận biểu cảm",
-                "NEUTRAL_REARMED": "Sẵn sàng nhận biểu cảm",
-            }.get(s.get("reason"), s.get("reason", "WAIT_MODEL_ROBOT")))
-            if fresh
-            else "ERROR — ROS status stale / chờ khởi động"
-        )
-    )
+    action = s.get("action") or {}
+    raw_label = (p.get("raw_label") or "").upper()
+    if not fresh:
+        message = "ĐANG CHỜ KẾT NỐI ROBOT"
+    elif action:
+        message = "ĐÃ XÁC NHẬN: " + action["label"].upper() + " — ROBOT ĐANG CHẠY"
+    elif not s.get("enabled"):
+        message = "ĐÃ DỪNG — NHẤN START ĐỂ TIẾP TỤC"
+    elif s.get("state") == "WAIT_NEUTRAL":
+        message = "GIỮ NEUTRAL ĐỂ CHUẨN BỊ LƯỢT MỚI"
+    elif s.get("reason") in ("NO_FACE", "FACE_COUNT_MISMATCH", "MULTIPLE_FACES"):
+        message = "ĐƯA MỘT KHUÔN MẶT RÕ VÀO CAMERA"
+    elif s.get("armed") and raw_label and raw_label != "NEUTRAL":
+        message = "CHỜ XÁC NHẬN: " + raw_label
+    elif s.get("armed"):
+        message = "SẴN SÀNG — TẠO BIỂU CẢM ĐỂ ĐIỀU KHIỂN"
+    else:
+        message = "GIỮ NEUTRAL ĐỂ SẴN SÀNG"
+    info.configure(text=message)
     try:
         im = Image.open(run / "camera.jpg").convert("RGB")
         draw = ImageDraw.Draw(im)

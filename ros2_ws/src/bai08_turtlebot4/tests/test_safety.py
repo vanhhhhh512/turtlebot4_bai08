@@ -81,11 +81,10 @@ class Safety(unittest.TestCase):
         self.assertEqual(self.frame("neutral"), (0.0, 0.0))
         self.assertFalse(self.c.armed)
 
-    def test_no_face_multi_low_disgust(self):
+    def test_no_face_multi_disgust_immediate(self):
         for bad in [
             dict(status="NO_FACE", faces=0),
             dict(faces=2),
-            dict(scores={k: 1 / 7 for k in LABELS}),
             dict(scores={k: float(k == "disgust") for k in LABELS}),
         ]:
             self.setUp()
@@ -130,7 +129,7 @@ class Safety(unittest.TestCase):
 
     def test_label_change_and_rearm(self):
         self.begin("fear")
-        self.frame("angry")
+        self.stable("angry", 7)
         self.assertIsNone(self.c.action)
         self.stable("angry")
         self.assertIsNone(self.c.action)
@@ -149,9 +148,37 @@ class Safety(unittest.TestCase):
         self.assertIsNotNone(self.c.action)
         self.assertEqual(self.c.action["label"], "happy")
         self.frame("happy", scores=weak)
+        self.assertIsNotNone(self.c.action)
+        for _ in range(12):
+            self.frame("happy", scores={k: 1 / 7 for k in LABELS})
         self.assertIsNone(self.c.action)
         self.assertFalse(self.c.armed)
         self.stable("happy", 20)
+        self.assertIsNone(self.c.action)
+
+    def test_running_hysteresis_and_single_frame_label_noise(self):
+        self.begin("fear")
+        self.frame("angry")
+        self.assertIsNotNone(self.c.action)
+        self.frame("fear")
+        self.assertIsNotNone(self.c.action)
+        weak = {k: 0.0 for k in LABELS}
+        weak.update(fear=0.48, neutral=0.30, sad=0.22)
+        for _ in range(20):
+            self.frame("fear", scores=weak)
+            self.assertIsNotNone(self.c.action)
+        self.assertEqual(self.c.counter, 1)
+
+    def test_persistent_uncertainty_cancels_and_never_resumes(self):
+        self.begin("fear")
+        start = self.t
+        for _ in range(9):
+            self.frame("fear", scores={k: 1 / 7 for k in LABELS})
+            if self.c.action is None:
+                break
+        self.assertIsNone(self.c.action)
+        self.assertLessEqual(self.t - start, 0.8)
+        self.stable("fear", 30)
         self.assertIsNone(self.c.action)
 
     def test_uncertain_idle_permit_expires(self):

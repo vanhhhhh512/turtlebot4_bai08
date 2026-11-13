@@ -1,5 +1,6 @@
 from setuptools import setup
 from glob import glob
+from pathlib import Path
 
 setup(
     name="bai08_turtlebot4",
@@ -10,7 +11,7 @@ setup(
         ("share/bai08_turtlebot4", ["package.xml"]),
     ]
     + [
-        ("share/bai08_turtlebot4/" + d, glob(d + "/*"))
+        ("share/bai08_turtlebot4/" + d, [p for p in glob(d + "/*") if Path(p).is_file()])
         for d in ["launch", "config", "worlds"]
     ],
     entry_points={

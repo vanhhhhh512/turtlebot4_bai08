@@ -20,6 +20,9 @@ DEFAULT = dict(
     turn=2 * math.pi,
     action_timeout=35.0,
     ema=0.55,
+    release_confidence=0.40,
+    release_margin=0.06,
+    interruption_hold=0.30,
 )
 
 
@@ -41,6 +44,7 @@ class Controller:
         self.armed, self.enabled = False, True
         self.armed_until = -1e9
         self.action = None
+        self.uncertain_since = None
         self.events = []
         self.state, self.reason = "LOADING", "WAIT_MODEL_ROBOT"
         self.counter = 0
@@ -55,6 +59,7 @@ class Controller:
         if self.action:
             self.emit("ACTION_END", now, **self.action, reason=reason, pose=self.pose)
         self.action = None
+        self.uncertain_since = None
         self.speed = (0.0, 0.0)
         self.armed = False
         self.candidate = None
@@ -136,13 +141,41 @@ class Controller:
                 s[raw[0]] >= self.cfg["confidence"]
                 and s[raw[0]] - s[raw[1]] >= self.cfg["margin"]
             )
-            if self.raw == "neutral":
-                if self.action:
-                    self.cancel("NEUTRAL", now)
-            elif self.action and self.raw != self.action["label"]:
-                self.cancel("LABEL_CHANGED", now)
             if self.raw == "disgust":
                 self.cancel("OUTSIDE_SET", now)
+                return True
+            if self.action and self.raw == "neutral" and confident:
+                self.cancel("NEUTRAL", now)
+                return True
+            if self.scores is None:
+                self.scores = dict(s)
+            else:
+                alpha = self.cfg["ema"]
+                self.scores = {
+                    k: alpha * s[k] + (1 - alpha) * self.scores[k] for k in s
+                }
+            order = sorted(self.scores, key=self.scores.get, reverse=True)
+            label = order[0]
+            if self.action:
+                # A single noisy raw frame must not bypass the temporal filter.
+                # Use a lower release threshold than the starting threshold;
+                # persistent uncertainty still cancels, with no automatic resume.
+                supported = (
+                    label == self.action["label"]
+                    and self.scores[label] >= self.cfg["release_confidence"]
+                    and self.scores[label] - self.scores[order[1]]
+                    >= self.cfg["release_margin"]
+                )
+                if supported:
+                    self.uncertain_since = None
+                elif self.uncertain_since is None:
+                    self.uncertain_since = now
+                elif now - self.uncertain_since >= self.cfg["interruption_hold"]:
+                    self.cancel(
+                        "LABEL_CHANGED" if label != self.action["label"]
+                        and self.scores[label] >= self.cfg["confidence"]
+                        else "LOW_CONFIDENCE", now,
+                    )
                 return True
             if not confident:
                 # A human passes through uncertain scores while changing face.
@@ -157,15 +190,6 @@ class Controller:
                 else:
                     self.cancel("LOW_CONFIDENCE", now)
                 return True
-            if self.scores is None:
-                self.scores = dict(s)
-            else:
-                alpha = self.cfg["ema"]
-                self.scores = {
-                    k: alpha * s[k] + (1 - alpha) * self.scores[k] for k in s
-                }
-            order = sorted(self.scores, key=self.scores.get, reverse=True)
-            label = order[0]
             if (
                 label != self.raw
                 or self.scores[label] < self.cfg["confidence"]
@@ -209,6 +233,7 @@ class Controller:
         if label not in ("happy", "sad", "angry", "fear", "surprise"):
             return
         self.counter += 1
+        self.uncertain_since = None
         self.action = dict(
             id=self.counter,
             label=label,

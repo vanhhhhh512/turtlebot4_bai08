@@ -82,6 +82,11 @@ for fault in [
     first_zero = stopped = None
     deadline = start + 2.5
     while time.monotonic() < deadline:
+        # Persistent evidence is distinct from a one-frame spike or stale packet.
+        if fault == "low_confidence":
+            send("fear", scores={k: 1 / 7 for k in LABELS})
+        elif fault == "change_label":
+            send("angry")
         s = read(run / "status.json")
         if not s.get("action") and s.get("v") == s.get("w") == 0 and first_zero is None:
             first_zero = time.monotonic()
@@ -96,7 +101,11 @@ for fault in [
             zero_delay_s=first_zero - start if first_zero else None,
             actual_stop_s=stopped - start if stopped else None,
             reason=s.get("reason"),
-            pass_=bool(stopped and stopped - start < 1.4),
+            pass_=bool(
+                stopped and stopped - start < 1.4
+                and (fault != "low_confidence" or s.get("reason") == "LOW_CONFIDENCE")
+                and (fault != "change_label" or s.get("reason") == "LABEL_CHANGED")
+            ),
         )
     )
     print(results[-1], flush=True)
@@ -116,3 +125,4 @@ for fault in [
     hold("fear", 1.2)
     assert not read(run / "status.json").get("action"), "Resumed stale action"
 print("FAULT COMPONENT TESTS DONE", flush=True)
+sys.exit(0 if all(r["pass_"] for r in results) else 1)

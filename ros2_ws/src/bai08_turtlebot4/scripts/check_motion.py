@@ -108,3 +108,4 @@ for label in a.labels:
         label, "PASS" if passed else "FAIL", measured, end and end["reason"], flush=True
     )
 print("All component tests complete; not webcam recognition evidence.", flush=True)
+sys.exit(0 if all(r["pass_"] for r in results) else 1)

@@ -10,3 +10,5 @@
 8. Up file WebM lên Google Drive rồi cấp URL mới; chưa có URL thì báo cáo ghi file local/chưa có link. Không dùng video Bài 07.
 
 Log nhãn đối chiếu (người thực hiện định tạo) phải do người dùng xác nhận. Chỉ log dự đoán model không đủ tính accuracy hoặc confusion matrix. Tất cả lượt sai được giữ.
+
+Bộ lọc khi đang chạy có hysteresis: ngưỡng bắt đầu 0.55/margin 0.18, duy trì trên EMA 0.40/margin 0.06; mất hỗ trợ liên tục 0.30 s thì hủy. Một frame nhiễu không hủy ngay. Neutral rõ/mất mặt/STOP vẫn dừng ngay; sau khi hủy cần Neutral mới.

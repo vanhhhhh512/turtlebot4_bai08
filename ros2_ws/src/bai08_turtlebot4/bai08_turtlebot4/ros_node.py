@@ -1,4 +1,5 @@
 import json, math, time, os, signal
+from collections import Counter
 from pathlib import Path
 import rclpy
 from rclpy.node import Node
@@ -140,6 +141,10 @@ class Motion(Node):
             reason=self.core.reason,
             raw=self.core.raw,
             stable=self.core.stable,
+            vote_counts=dict(Counter(k for _, k in self.core.votes if k)),
+            vote_min=self.core.cfg["vote_min"],
+            vote_window=self.core.cfg["vote_window"],
+            decision_mode=self.core.cfg["decision_mode"],
             armed=self.core.armed,
             enabled=self.core.enabled,
             permit_remaining_s=(

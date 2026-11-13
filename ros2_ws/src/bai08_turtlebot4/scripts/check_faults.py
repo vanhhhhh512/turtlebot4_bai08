@@ -47,7 +47,7 @@ def begin():
     return s
 
 
-for fault in [
+fault_names = [
     "neutral",
     "no_face",
     "multiple_faces",
@@ -57,7 +57,12 @@ for fault in [
     "replayed_prediction",
     "gui_stop",
     "change_label",
-]:
+]
+vote_mode = read(run / "effective_config.json").get("decision_mode") == "votes"
+if vote_mode:
+    # A new expression is deliberately ignored during a locked action.
+    fault_names.remove("change_label")
+for fault in fault_names:
     begin()
     start = time.monotonic()
     if fault == "neutral":
@@ -83,7 +88,9 @@ for fault in [
     deadline = start + 2.5
     while time.monotonic() < deadline:
         # Persistent evidence is distinct from a one-frame spike or stale packet.
-        if fault == "low_confidence":
+        if fault == "neutral" and vote_mode:
+            send("neutral")
+        elif fault == "low_confidence":
             send("fear", scores={k: 1 / 7 for k in LABELS})
         elif fault == "change_label":
             send("angry")

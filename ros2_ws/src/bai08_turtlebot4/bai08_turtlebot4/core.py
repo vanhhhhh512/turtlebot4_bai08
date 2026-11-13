@@ -1,9 +1,17 @@
 """Pure decision logic. Monotonic seconds, metres, radians; no ML/ROS imports."""
 
 import math
+from collections import Counter, deque
 
 LABELS = ("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
 DEFAULT = dict(
+    decision_mode="votes",
+    vote_window=57,
+    vote_min=11,
+    vote_confidence=0.40,
+    vote_margin=0.06,
+    neutral_stop_hold=0.80,
+    vote_low_hold=0.50,
     confidence=0.55,
     margin=0.18,
     hold=0.40,
@@ -45,6 +53,8 @@ class Controller:
         self.armed_until = -1e9
         self.action = None
         self.uncertain_since = None
+        self.votes = deque(maxlen=int(self.cfg["vote_window"]))
+        self.neutral_since = None
         self.events = []
         self.state, self.reason = "LOADING", "WAIT_MODEL_ROBOT"
         self.counter = 0
@@ -60,6 +70,8 @@ class Controller:
             self.emit("ACTION_END", now, **self.action, reason=reason, pose=self.pose)
         self.action = None
         self.uncertain_since = None
+        self.votes.clear()
+        self.neutral_since = None
         self.speed = (0.0, 0.0)
         self.armed = False
         self.candidate = None
@@ -144,6 +156,9 @@ class Controller:
             if self.raw == "disgust":
                 self.cancel("OUTSIDE_SET", now)
                 return True
+            if self.cfg["decision_mode"] == "votes":
+                self.vote_prediction(s, raw, confident, now)
+                return True
             if self.action and self.raw == "neutral" and confident:
                 self.cancel("NEUTRAL", now)
                 return True
@@ -227,6 +242,55 @@ class Controller:
             self.cancel("MALFORMED_PREDICTION", now)
             return False
 
+    def vote_prediction(self, scores, order, neutral_confident, now):
+        """Accept one voted command from fresh frames, then lock its action."""
+        label = order[0]
+        accepted = (
+            scores[label] >= self.cfg["vote_confidence"]
+            and scores[label] - scores[order[1]] >= self.cfg["vote_margin"]
+        )
+        if self.action:
+            self.stable = self.action["label"]
+            if label == "neutral" and neutral_confident:
+                if self.neutral_since is None:
+                    self.neutral_since = now
+                elif now - self.neutral_since >= self.cfg["neutral_stop_hold"]:
+                    self.cancel("NEUTRAL", now)
+                    return
+            else:
+                self.neutral_since = None
+            if accepted:
+                self.uncertain_since = None
+            elif self.uncertain_since is None:
+                self.uncertain_since = now
+            elif now - self.uncertain_since >= self.cfg["vote_low_hold"]:
+                self.cancel("LOW_CONFIDENCE", now)
+            return
+        self.votes.append((self.capture_at, label if accepted else None))
+        counts = Counter(k for _, k in self.votes if k is not None)
+        if not self.enabled or not self.healthy(now):
+            return
+        if not self.armed:
+            if counts["neutral"] >= self.cfg["vote_min"]:
+                self.armed = True
+                self.armed_until = now + self.cfg["rearm_window"]
+                self.stable = "neutral"
+                self.state, self.reason = "READY", "NEUTRAL_REARMED"
+                self.votes.clear()
+            else:
+                self.state, self.reason = "WAIT_NEUTRAL", "REQUIRE_NEUTRAL"
+            return
+        if accepted and label == "neutral":
+            self.armed_until = now + self.cfg["rearm_window"]
+        self.state, self.reason = "READY", "WAIT_VOTES"
+        if accepted and label not in ("neutral", "disgust"):
+            if counts[label] >= self.cfg["vote_min"]:
+                self.emit("VOTE_ACCEPTED", now, label=label, count=counts[label],
+                          window=len(self.votes), threshold=self.cfg["vote_min"])
+                self.stable = label
+                self.start(label, now)
+                self.votes.clear()
+
     def healthy(self, now):
         return (
             self.prepared
@@ -242,6 +306,7 @@ class Controller:
             return
         self.counter += 1
         self.uncertain_since = None
+        self.neutral_since = None
         self.action = dict(
             id=self.counter,
             label=label,
@@ -313,6 +378,8 @@ class Controller:
             if amount >= target:
                 self.emit("ACTION_END", now, **a, reason="completed", pose=self.pose)
                 self.action = None
+                self.votes.clear()
+                self.neutral_since = None
                 self.state, self.reason = "WAIT_NEUTRAL", "COMPLETED"
             elif now - a["start"] > cfg["action_timeout"]:
                 self.cancel("ACTION_TIMEOUT", now)

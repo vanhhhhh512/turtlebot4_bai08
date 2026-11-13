@@ -7,7 +7,7 @@ from bai08_turtlebot4.core import Controller, LABELS, wrap
 
 class Safety(unittest.TestCase):
     def setUp(self):
-        self.c = Controller("test")
+        self.c = Controller("test", {"decision_mode": "ema"})
         self.t = 10.0
         self.seq = 0
         self.pose = (0.0, 0.0, 3.0)
@@ -213,6 +213,75 @@ class Safety(unittest.TestCase):
         self.stable("neutral")
         self.frame("happy", source="component_test")
         self.assertEqual(self.c.raw, "neutral")
+
+
+class VoteSafety(unittest.TestCase):
+    frame = Safety.frame
+    stable = Safety.stable
+
+    def setUp(self):
+        self.c = Controller("test", {"vote_min": 4})
+        self.t, self.seq = 10.0, 0
+        self.pose = (0.0, 0.0, 3.0)
+
+    def begin(self, label):
+        self.stable("neutral", 4)
+        self.stable(label, 4)
+        self.assertIsNotNone(self.c.action)
+
+    def test_four_nonconsecutive_votes_start_once(self):
+        self.stable("neutral", 4)
+        for _ in range(3):
+            self.frame("angry")
+            self.stable("neutral", 5)
+            self.assertIsNone(self.c.action)
+        scores = {k: 0.0 for k in LABELS}
+        scores.update(angry=0.544, neutral=0.456)
+        self.assertLess(self.frame("angry", scores=scores)[0], 0)
+        self.assertEqual(self.c.counter, 1)
+
+    def test_default_requires_more_than_ten_votes(self):
+        self.c = Controller("test")
+        self.stable("neutral", 11)
+        self.stable("happy", 10)
+        self.assertIsNone(self.c.action)
+        self.frame("happy")
+        self.assertEqual(self.c.action["label"], "happy")
+
+    def test_votes_expire_outside_57_frames(self):
+        self.stable("neutral", 4)
+        self.stable("angry", 3)
+        self.stable("neutral", 57)
+        self.frame("angry")
+        self.assertIsNone(self.c.action)
+
+    def test_locked_action_neutral_stop_and_no_resume(self):
+        self.begin("fear")
+        self.stable("sad", 5)
+        self.assertEqual(self.c.action["label"], "fear")
+        self.stable("neutral", 11)
+        self.assertIsNone(self.c.action)
+        self.assertEqual(
+            [e for e in self.c.events if e["event"] == "ACTION_END"][-1]["reason"],
+            "NEUTRAL",
+        )
+        self.stable("fear", 30)
+        self.assertIsNone(self.c.action)
+        self.stable("neutral", 4)
+        self.stable("fear", 4)
+        self.assertEqual(self.c.counter, 2)
+        self.assertEqual(self.frame("fear", status="NO_FACE", faces=0), (0, 0))
+
+    def test_surprise_completes_one_turn_without_repeat(self):
+        self.begin("surprise")
+        for _ in range(220):
+            x, y, yaw = self.pose
+            self.pose = (x, y, wrap(yaw + self.c.speed[1] * 0.1))
+            self.frame("surprise")
+        self.assertIsNone(self.c.action)
+        self.assertEqual(self.c.counter, 1)
+        self.assertEqual(self.c.events[-1]["reason"], "completed")
+        self.assertGreaterEqual(self.c.events[-1]["yaw"], 2 * math.pi)
 
 
 if __name__ == "__main__":

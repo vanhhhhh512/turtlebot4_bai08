@@ -13,7 +13,7 @@ Webcam thật → YuNet detector + DeepFace 0.0.104 Emotion ONNX CPU → lọc t
 | surprise | 0 | +0.35 | tích lũy 2π rad |
 | fear | +0.10 | 0 | tiến 0.23 m |
 
-Giữ cùng biểu cảm không tạo hành động thứ hai. Giữ Neutral đủ 0.6 s để rearm. Confidence tối thiểu 0.55, margin 0.18, EMA α=0.55, hold 0.40 s. Đây là tham số thiết kế đã kiểm tra logic; score không phải accuracy. Neutral rõ (score/margin đạt ngưỡng), mất mặt/nhiều mặt/disgust dừng và hủy action đang chạy. Khi action đã bắt đầu, EMA dùng ngưỡng duy trì 0.40 và margin 0.06; nhiễu nhãn hoặc scores yếu liên tục 0.30 s mới hủy. Nhờ vậy một frame nhiễu không bỏ qua bộ lọc để ngắt quỹ đạo. Khi đã hủy, không tự resume. Khi chưa có action, một permit Neutral chưa sử dụng được giữ tối đa 8 s qua scores thấp để người dùng chuyển nét mặt; vận tốc vẫn bằng zero và nhãn mới vẫn phải đủ confidence/margin/hold. Permit hết hạn hoặc lỗi mất mặt/watchdog cần Neutral mới. Không resume action đã hủy. Prediction timeout 0.9 s, odom 0.5 s, clock 0.6 s; GUI STOP là latch độc lập ML. START cần Neutral mới. Session/seq/capture timestamp ngăn phát lại.
+Bộ chốt lệnh mặc định đếm **11 frame cùng biểu cảm trong 57 prediction gần nhất**, không cần liên tiếp. Mỗi phiếu cần top-1 ≥0.40 và margin ≥0.06; scores gốc vẫn giữ nguyên. Sau Neutral đủ11 phiếu, GUI READY. Đủ11 phiếu của Happy/Sad/Angry/Fear/Surprise sẽ tạo đúng một action hữu hạn và khóa nhãn action tới khi hoàn thành hoặc bị dừng; nhãn khác không chen lệnh. Neutral rõ (top-1≥0.55, margin≥0.18) liên tục0.8s dừng/hủy; STOP/mất mặt/nhiều mặt/disgust/ML lỗi/hazard/watchdog vẫn dừng ngay. Điểm thấp liên tục0.5s hủy. Sau hoàn thành hoặc hủy phải có Neutral mới, không chạy lặp hoặc resume action cũ. Permit Neutral8s; prediction timeout0.9s, odom0.5s, clock0.6s. Các ngưỡng là tham số thiết kế, không phải accuracy. Chế độ EMA trước còn tái tạo được bằng decision_mode=ema trong control_config.json.
 
 ## Cài đặt
 
@@ -54,7 +54,7 @@ bash start_demo.sh
 
 Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật chờ Neutral sau khi FFmpeg thực sự tạo file. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
 
-Đưa trọn mặt vào khung, giữ Neutral → thấy READY → tạo một biểu cảm và giữ đến khi action xong. Surprise cần khoảng 18 s ở 0.35 rad/s. Mất mặt/Neutral rõ/đổi nhãn kéo dài sẽ hủy action; muốn thử lại phải rearm. Nút STOP dừng robot; START chỉ bật lại chế độ chờ Neutral. **Ctrl+C một lần**: latch STOP ngay, chờ thấy robot dừng, FFmpeg nhận `q` để finalize, decode video, rồi mới đóng đúng nhóm process phiên này. Không kill rộng hoặc kill -9 recorder.
+Đưa trọn mặt vào khung, giữ Neutral → thấy READY → tạo một biểu cảm và giữ đến khi action xong. Surprise cần khoảng 18 s ở 0.35 rad/s. Mất mặt hoặc Neutral rõ giữ0.8s sẽ hủy action; muốn thử lại phải rearm. Nút STOP dừng robot; START chỉ bật lại chế độ chờ Neutral. **Ctrl+C một lần**: latch STOP ngay, chờ thấy robot dừng, FFmpeg nhận `q` để finalize, decode video, rồi mới đóng đúng nhóm process phiên này. Không kill rộng hoặc kill -9 recorder.
 
 ## Log và kiểm chứng
 
@@ -82,4 +82,4 @@ Default YuNet ONNX thay Haar sau kiểm tra 19 ảnh webcam thật lưu lại: Y
 
 Worker giới hạn mỗi ONNX session ở 2 intra-op/1 inter-op threads và tắt busy spinning, OpenCV 1 thread, để không tranh CPU với Gazebo. Đây là cùng model/weights, không thay nhãn hoặc scores bằng tay.
 
-Khi chờ khởi động, confidence/margin được xét trên EMA của mọi frame hợp lệ thay vì reset theo mỗi frame thô yếu. Giữ nhãn 0.40 s; Neutral permit 8 s để có thời gian đổi nét mặt. Neutral rõ không thể khởi động action từ EMA còn trễ. WAIT_NEUTRAL báo cần Neutral mới dù raw label đã đúng.
+WAIT_NEUTRAL báo cần Neutral mới dù raw label đã đúng. GUI hiển thị phiếu của biểu cảm đang chờ; nhãn chốt giữ nguyên trong action.

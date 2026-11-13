@@ -103,9 +103,18 @@ def refresh():
     s = read(run / "status.json")
     now = time.monotonic()
     fresh = now - s.get("monotonic", 0) < 1
+    votes = s.get("vote_counts", {})
+    candidate_votes = sorted(
+        ((k, n) for k, n in votes.items() if k != "neutral"),
+        key=lambda pair: pair[1], reverse=True,
+    )
+    vote_text = (
+        f" | {candidate_votes[0][0]}: {candidate_votes[0][1]}/{s.get('vote_min',11)} phiếu"
+        if candidate_votes and not s.get("action") else ""
+    )
     info.configure(
         text=(
-            (s.get("state", "LOADING") + " — " + s.get("reason", "WAIT_MODEL_ROBOT"))
+            (s.get("state", "LOADING") + " — " + s.get("reason", "WAIT_MODEL_ROBOT") + vote_text)
             if fresh
             else "ERROR — ROS status stale / chờ khởi động"
         )
@@ -134,9 +143,14 @@ def refresh():
         bar["value"] = score
         val.configure(text=f"{score:.1f}%")
     a = s.get("action") or {}
+    guide = (
+        "Đang thực hiện; giữ Neutral 0.8 s hoặc STOP để dừng"
+        if a else f"Sẵn sàng: mỗi biểu cảm cần {s.get('vote_min',11)}/{s.get('vote_window',57)} frame"
+        if s.get("armed") else "Giữ Neutral để chuẩn bị lượt mới"
+    )
     progress["value"] = a.get("progress", 0)
     detail.configure(
-        text=f"v = {s.get('v',0):.2f} m/s   ω = {s.get('w',0):.2f} rad/s\nAction: {a.get('label','—')}   #{a.get('id','—')}\nΔs = {a.get('distance',0):.3f} m   Δyaw = {a.get('yaw',0):.3f} rad\n{'Sẵn sàng biểu cảm mới' if s.get('armed') else 'Giữ Neutral để rearm'}\nModel: DeepFace Emotion ONNX CPU"
+        text=f"v = {s.get('v',0):.2f} m/s   ω = {s.get('w',0):.2f} rad/s\nAction: {a.get('label','—')}   #{a.get('id','—')}\nΔs = {a.get('distance',0):.3f} m   Δyaw = {a.get('yaw',0):.3f} rad\n{guide}\nModel: DeepFace Emotion ONNX CPU"
     )
     plot.delete("all")
     plot.create_text(155, 12, text="Quỹ đạo odom thực • x/y (m)", fill="#222")

@@ -25,6 +25,7 @@ prompt_chat_moi.txt
 tools/checkpoint.py
 tools/ros_probe.sh
 tools/build_report.py
+tools/build_selected_demo_report.py
 tools/benchmark_photo.py
 tools/benchmark_detector.py
 tools/check_yunet_background.py

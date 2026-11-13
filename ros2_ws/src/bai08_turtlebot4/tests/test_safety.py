@@ -22,6 +22,7 @@ class Safety(unittest.TestCase):
         p = dict(
             session="test",
             seq=self.seq,
+            frame_id=self.seq,
             capture_mono=self.t,
             source="webcam",
             status="OK",
@@ -96,19 +97,21 @@ class Safety(unittest.TestCase):
         self.begin("surprise")
         last = self.c.capture_at
         for p in [
-            dict(session="other", seq=999, capture_mono=self.t),
-            dict(session="test", seq=self.seq, capture_mono=self.t),
-            dict(session="test", seq=999, capture_mono=self.t - 3),
+            dict(session="other"),
+            dict(session="other", seq=999, frame_id=999, capture_mono=self.t),
+            dict(session="test", seq=self.seq, frame_id=999, capture_mono=self.t),
+            dict(session="test", seq=999, frame_id=999, capture_mono=self.t - 3),
         ]:
             self.assertFalse(self.c.prediction(p, self.t))
             self.assertEqual(last, self.c.capture_at)
+            self.assertIsNotNone(self.c.action)
         self.assertEqual(self.c.tick(self.t + 1.0), (0.0, 0.0))
         self.assertIsNone(self.c.action)
         self.stable("surprise", 30)
         self.assertIsNone(self.c.action)
 
     def test_odom_clock_stop_and_hazard(self):
-        for fault in ["odom_at", "clock_at", "hazard", "enabled", "external_publisher"]:
+        for fault in ["odom_at", "clock_at", "hazard", "enabled", "external_publisher", "external_clock"]:
             self.setUp()
             self.begin("happy")
             setattr(
@@ -119,7 +122,7 @@ class Safety(unittest.TestCase):
                     if fault == "enabled"
                     else (
                         True
-                        if fault in ("hazard", "external_publisher")
+                        if fault in ("hazard", "external_publisher", "external_clock")
                         else self.t - 1.0
                     )
                 ),
@@ -214,6 +217,14 @@ class Safety(unittest.TestCase):
         self.frame("happy", source="component_test")
         self.assertEqual(self.c.raw, "neutral")
 
+    def test_malformed_prediction_stops_without_crashing(self):
+        for packet in ([1, 2], "invalid", 17, {"session": "test", "source": "webcam"}):
+            self.setUp()
+            self.begin("fear")
+            self.assertFalse(self.c.prediction(packet, self.t))
+            self.assertIsNone(self.c.action)
+            self.assertEqual(self.c.reason, "MALFORMED_PREDICTION")
+
 
 class VoteSafety(unittest.TestCase):
     frame = Safety.frame
@@ -247,6 +258,38 @@ class VoteSafety(unittest.TestCase):
         self.assertIsNone(self.c.action)
         self.frame("happy")
         self.assertEqual(self.c.action["label"], "happy")
+
+    def test_expired_neutral_permit_cannot_start_on_final_vote(self):
+        self.c.cfg["rearm_window"] = 0.5
+        self.stable("neutral", 4)
+        self.stable("happy", 3)
+        self.frame("happy", dt=0.3)
+        self.assertIsNone(self.c.action)
+        self.assertFalse(self.c.armed)
+        self.stable("happy", 20)
+        self.assertIsNone(self.c.action)
+
+    def test_repeated_camera_frame_cannot_refresh_watchdog(self):
+        self.begin("surprise")
+        stamp = self.c.capture_at
+        frame = self.seq
+        for _ in range(12):
+            self.frame("surprise", frame_id=frame)
+        self.assertEqual(self.c.capture_at, stamp)
+        self.assertIsNone(self.c.action)
+        self.assertEqual(self.c.reason, "PREDICTION_STALE")
+
+    def test_wrong_direction_cannot_complete_straight_motion(self):
+        for label, wrong_sign in [("angry", 1), ("fear", -1)]:
+            self.setUp()
+            self.begin(label)
+            for _ in range(35):
+                x, y, yaw = self.pose
+                self.pose = (x + wrong_sign * 0.01 * math.cos(yaw),
+                             y + wrong_sign * 0.01 * math.sin(yaw), yaw)
+                self.frame(label)
+            self.assertIsNotNone(self.c.action)
+            self.assertEqual(self.c.action["progress"], 0)
 
     def test_votes_expire_outside_57_frames(self):
         self.stable("neutral", 4)

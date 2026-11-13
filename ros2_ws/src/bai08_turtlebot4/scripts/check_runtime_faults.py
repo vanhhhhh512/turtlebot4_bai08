@@ -10,6 +10,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
+from rosgraph_msgs.msg import Clock
 from irobot_create_msgs.msg import HazardDetectionVector, HazardDetection
 
 ap = argparse.ArgumentParser()
@@ -49,6 +51,7 @@ def send(label):
         dict(
             session=run.name,
             seq=seq,
+            frame_id=seq,
             capture_mono=now,
             source="component_test",
             faces=1,
@@ -124,6 +127,29 @@ try:
         new_end_count=len(ends) - initial_end_count,
         state=s["state"],
     )
+    # An orphan with the SAME controller name must also stop this session.
+    for topic, msg_type, fault, reason in (
+        ("/cmd_vel", Twist, "duplicate_controller_name", "OTHER_CMD_PUBLISHER"),
+        ("/clock", Clock, "duplicate_clock", "OTHER_CLOCK_PUBLISHER"),
+    ):
+        begin()
+        duplicate = Node("bai08_controller", enable_rosout=False)
+        publisher = duplicate.create_publisher(msg_type, topic, 10)
+        try:
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                send("fear")
+                pump(0.08)
+                s = read(run / "status.json")
+                if s.get("reason") == reason:
+                    break
+            record(fault, pass_=s.get("reason") == reason
+                   and not s.get("action") and s.get("v") == s.get("w") == 0,
+                   reason=s.get("reason"))
+        finally:
+            duplicate.destroy_node()
+        hold("fear", 1.0)
+        assert not read(run / "status.json").get("action"), "Resumed after duplicate publisher"
     begin()
     start = time.monotonic()
     resp = service(True)

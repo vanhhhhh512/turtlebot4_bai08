@@ -78,11 +78,12 @@ for label in a.labels:
         if label in ("happy", "sad")
         else 2 * math.pi if label == "surprise" else 0.17 if label == "angry" else 0.23
     )
-    measured = (
-        abs(end["yaw"])
-        if end and label in ("happy", "sad", "surprise")
-        else end["distance"] if end else None
-    )
+    measured = None
+    if end:
+        if label in ("happy", "sad", "surprise"):
+            measured = -end["yaw"] if label == "sad" else end["yaw"]
+        else:
+            measured = -end["signed_distance"] if label == "angry" else end["signed_distance"]
     tol = 0.13 if label in ("happy", "sad", "surprise") else 0.035
     passed = bool(
         end

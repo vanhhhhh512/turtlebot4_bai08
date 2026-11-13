@@ -8,7 +8,7 @@ Webcam thật → YuNet detector + DeepFace 0.0.104 Emotion ONNX CPU → lọc t
 |---|---:|---:|---|
 | happy | +0.10 | +0.35 | cung trái 60° |
 | sad | +0.10 | −0.35 | cung phải 60° |
-| neutral | 0 | 0 | dừng ngay |
+| neutral | 0 | 0 | dừng sau xác nhận Neutral rõ |
 | angry | −0.10 | 0 | lùi 0.17 m |
 | surprise | 0 | +0.35 | tích lũy 2π rad |
 | fear | +0.10 | 0 | tiến 0.23 m |
@@ -52,7 +52,7 @@ bash start_demo.sh
 
 Đóng phiên cũ trước khi mở lại. Mỗi lần tạo run ID, ROS domain 108, IGN partition riêng và file WebM mới. Lock domain chống chạy hai phiên. Có thể đặt `BAI08_DOMAIN=109`. Chỉ chạy môi trường Humble sạch; launcher loại bỏ overlay Python/ROS kế thừa. Model assets phải được chuẩn bị trước, nếu thiếu thì worker báo lỗi, không READY giả.
 
-Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật chờ Neutral sau khi FFmpeg thực sự tạo file. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
+Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật chờ Neutral sau khi FFmpeg thực sự tạo file. Truy vấn khóa màn hình lỗi tạm thời được thử lại; ba lỗi liên tiếp dừng có kiểm soát. Cleanup vẫn tiếp tục nếu terminal đóng hoặc một tiến trình kết thúc lỗi. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
 
 Đưa trọn mặt vào khung, giữ Neutral → thấy READY → tạo một biểu cảm và giữ đến khi action xong. Surprise cần khoảng 18 s ở 0.35 rad/s. Mất mặt hoặc Neutral rõ giữ0.8s sẽ hủy action; muốn thử lại phải rearm. Nút STOP dừng robot; START chỉ bật lại chế độ chờ Neutral. **Ctrl+C một lần**: latch STOP ngay, chờ thấy robot dừng, FFmpeg nhận `q` để finalize, decode video, rồi mới đóng đúng nhóm process phiên này. Không kill rộng hoặc kill -9 recorder.
 
@@ -60,9 +60,11 @@ Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock
 
 `runs/<id>/`: session.json (PID/domain/partition), predictions.jsonl (source webcam, frame/seq/timestamps/raw percentages/normalized scores/bbox), control.jsonl (Twist/FSM/events), odom.jsonl, effective_config.json, status.json, recording.json. Hình camera và log chỉ local. `results/demo_<id>.webm`: hình cửa sổ thật 12 FPS, VP8. Recorder kiểm decode toàn bộ, xuất first/last PNG; cần xem hình để xác nhận nội dung.
 
+Frame camera phải tăng cùng sequence và timestamp; frame lặp không làm mới watchdog hoặc thêm phiếu. Permit Neutral được kiểm tra trước khi chốt biểu cảm, nên lệnh đến sau hạn8s không được chạy. Quãng tiến/lùi được tích phân có dấu trong frame robot; chuyển động ngược hướng không được tính hoàn thành.
+
 Yaw hoàn thành từ tổng sai phân atan2(sin Δ,cos Δ), không so hướng đầu/cuối. Cung theo frame robot (+x tiến,+z quay trái), không đảo dấu theo camera. Đường XY là odom thực; UI không vẽ đường mục tiêu thay kết quả.
 
-Bridge upstream có cổng Ignition→ROS `/cmd_vel`; remap riêng `cmd_vel_bridge:cmd_vel` sang `/bai08/unused_ign_cmd` để chỉ controller Bài08 publish `/cmd_vel`. Nếu có publisher khác, guard dừng. Không mở teleop/Nav2 trong cùng domain.
+Bridge upstream có cổng Ignition→ROS `/cmd_vel`; remap riêng `cmd_vel_bridge:cmd_vel` sang `/bai08/unused_ign_cmd` để chỉ controller Bài08 publish `/cmd_vel`. Nếu có nhiều publisher kể cả trùng tên controller, hoặc nhiều nguồn /clock, guard dừng và không READY. Giao diện ghi rõ nguyên nhân chặn thay vì luôn yêu cầu Neutral. Không mở teleop/Nav2 trong cùng domain.
 
 ## Test thành phần, tách khỏi webcam
 

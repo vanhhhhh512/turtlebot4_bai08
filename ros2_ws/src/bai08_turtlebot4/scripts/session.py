@@ -255,6 +255,8 @@ def main():
             status = read(run / "status.json")
             robot = (
                 status.get("prepared")
+                and status.get("cmd_publishers") == 1
+                and status.get("clock_publishers") == 1
                 and status.get("odom_age", 99) < 0.5
                 and status.get("clock_age", 99) < 0.6
             )

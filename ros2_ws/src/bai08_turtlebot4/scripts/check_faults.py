@@ -23,6 +23,7 @@ def send(label="neutral", **kw):
         session=run.name,
         source="component_test",
         seq=seq,
+        frame_id=seq,
         capture_mono=now,
         status="OK",
         faces=1,

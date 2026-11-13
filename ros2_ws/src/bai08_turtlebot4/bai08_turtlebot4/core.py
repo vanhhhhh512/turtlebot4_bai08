@@ -43,6 +43,7 @@ class Controller:
         self.cfg = dict(DEFAULT, **(config or {}))
         self.session, self.allow_test = session, allow_test
         self.last_seq, self.capture_at, self.last_pred = -1, -1e9, -1e9
+        self.last_frame = -1
         self.odom_at = self.clock_at = -1e9
         self.pose = None
         self.speed = (0.0, 0.0)
@@ -61,6 +62,7 @@ class Controller:
         self.prepared = False
         self.hazard = False
         self.external_publisher = False
+        self.external_clock = False
 
     def emit(self, event, now, **kw):
         self.events.append(dict(event=event, monotonic=now, **kw))
@@ -91,6 +93,10 @@ class Controller:
                 self.cancel("ODOM_JUMP", now)
             else:
                 a["distance"] += d
+                # Forward displacement in the robot frame, with its sign.
+                heading = self.pose[2] + dy / 2
+                a["signed_distance"] += ((x - self.pose[0]) * math.cos(heading)
+                                         + (y - self.pose[1]) * math.sin(heading))
                 a["yaw"] += dy
                 a["max_center_drift"] = max(
                     a["max_center_drift"],
@@ -102,13 +108,22 @@ class Controller:
 
     def prediction(self, p, now):
         # Replayed/mismatched packets cannot refresh watchdog or change state.
+        if not isinstance(p, dict):
+            self.cancel("MALFORMED_PREDICTION", now)
+            return False
+        if p.get("session") != self.session:
+            return False
+        if p.get("source") != "webcam" and not self.allow_test:
+            return False
         try:
             seq = p["seq"]
+            frame_id = p["frame_id"]
             stamp = p["capture_mono"]
             if (
-                p["session"] != self.session
-                or not isinstance(seq, int)
+                type(seq) is not int
                 or seq <= self.last_seq
+                or type(frame_id) is not int
+                or frame_id <= self.last_frame
             ):
                 return False
             if (
@@ -118,9 +133,8 @@ class Controller:
                 or now - stamp > self.cfg["prediction_timeout"]
             ):
                 return False
-            if p.get("source") != "webcam" and not self.allow_test:
-                return False
             self.last_seq, self.capture_at, self.last_pred = seq, stamp, now
+            self.last_frame = frame_id
             if (
                 p.get("status") != "OK"
                 or p.get("faces") != 1
@@ -156,6 +170,9 @@ class Controller:
             if self.raw == "disgust":
                 self.cancel("OUTSIDE_SET", now)
                 return True
+            # Expiry must be checked before the new frame can launch an action.
+            if self.armed and now > self.armed_until:
+                self.cancel("REARM_WINDOW_EXPIRED", now)
             if self.cfg["decision_mode"] == "votes":
                 self.vote_prediction(s, raw, confident, now)
                 return True
@@ -299,6 +316,7 @@ class Controller:
             and now - self.clock_at < self.cfg["clock_timeout"]
             and not self.hazard
             and not self.external_publisher
+            and not self.external_clock
         )
 
     def start(self, label, now):
@@ -313,6 +331,7 @@ class Controller:
             start=now,
             origin=self.pose,
             distance=0.0,
+            signed_distance=0.0,
             yaw=0.0,
             max_center_drift=0.0,
         )
@@ -321,36 +340,17 @@ class Controller:
         self.emit("ACTION_START", now, **self.action)
 
     def tick(self, now):
-        issue = (
-            "GUI_STOP"
-            if not self.enabled
-            else (
-                "OTHER_CMD_PUBLISHER"
-                if self.external_publisher
-                else (
-                    "HAZARD"
-                    if self.hazard
-                    else (
-                        "ROBOT_NOT_PREPARED"
-                        if not self.prepared
-                        else (
-                            "ODOM_STALE"
-                            if now - self.odom_at >= self.cfg["odom_timeout"]
-                            else (
-                                "CLOCK_STALE"
-                                if now - self.clock_at >= self.cfg["clock_timeout"]
-                                else (
-                                    "PREDICTION_STALE"
-                                    if now - self.capture_at
-                                    >= self.cfg["prediction_timeout"]
-                                    else None
-                                )
-                            )
-                        )
-                    )
-                )
-            )
+        issues = (
+            ("GUI_STOP", not self.enabled),
+            ("OTHER_CMD_PUBLISHER", self.external_publisher),
+            ("OTHER_CLOCK_PUBLISHER", self.external_clock),
+            ("HAZARD", self.hazard),
+            ("ROBOT_NOT_PREPARED", not self.prepared),
+            ("ODOM_STALE", now - self.odom_at >= self.cfg["odom_timeout"]),
+            ("CLOCK_STALE", now - self.clock_at >= self.cfg["clock_timeout"]),
+            ("PREDICTION_STALE", now - self.capture_at >= self.cfg["prediction_timeout"]),
         )
+        issue = next((reason for reason, active in issues if active), None)
         if issue:
             self.cancel(issue, now)
             return (0.0, 0.0)
@@ -372,7 +372,7 @@ class Controller:
             amount = (
                 (-a["yaw"] if l == "sad" else a["yaw"])
                 if l in ("happy", "sad", "surprise")
-                else a["distance"]
+                else -a["signed_distance"] if l == "angry" else a["signed_distance"]
             )
             a["progress"] = max(0.0, min(1.0, amount / target))
             if amount >= target:

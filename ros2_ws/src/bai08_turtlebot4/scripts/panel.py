@@ -103,16 +103,41 @@ def refresh():
     fresh = now - s.get("monotonic", 0) < 1
     action = s.get("action") or {}
     raw_label = (p.get("raw_label") or "").upper()
+    reason = s.get("reason")
+    errors = {
+        "NO_FACE": "ĐƯA TRỌN KHUÔN MẶT VÀO CAMERA",
+        "FACE_COUNT_MISMATCH": "CHỈ ĐỂ MỘT KHUÔN MẶT TRONG CAMERA",
+        "MULTIPLE_FACES": "CHỈ ĐỂ MỘT KHUÔN MẶT TRONG CAMERA",
+        "FACE_CHANGED": "KHUÔN MẶT THAY ĐỔI — GIỮ NEUTRAL ĐỂ SẴN SÀNG",
+        "CAMERA_ERROR": "MẤT CAMERA — KIỂM TRA KẾT NỐI WEBCAM",
+        "INFERENCE_ERROR": "LỖI NHẬN DIỆN — ROBOT ĐÃ DỪNG",
+        "MALFORMED_PREDICTION": "DỮ LIỆU NHẬN DIỆN LỖI — ROBOT ĐÃ DỪNG",
+        "OUTSIDE_SET": "DISGUST — ROBOT DỪNG; GIỮ NEUTRAL ĐỂ TIẾP TỤC",
+        "LOW_CONFIDENCE": "BIỂU CẢM CHƯA RÕ — GIỮ NEUTRAL ĐỂ THỬ LẠI",
+        "ODOM_STALE": "MẤT PHẢN HỒI ROBOT — ĐÃ DỪNG ĐIỀU KHIỂN",
+        "CLOCK_STALE": "MÔ PHỎNG ĐANG TẠM DỪNG — CHỜ KẾT NỐI",
+        "PREDICTION_STALE": "ĐANG CHỜ HÌNH CAMERA MỚI — ROBOT DỪNG",
+        "OTHER_CMD_PUBLISHER": "TRÙNG BỘ ĐIỀU KHIỂN — CẦN ĐÓNG PHIÊN CŨ",
+        "OTHER_CLOCK_PUBLISHER": "TRÙNG MÔ PHỎNG — CẦN ĐÓNG PHIÊN CŨ",
+        "ROBOT_NOT_PREPARED": "ĐANG CHUẨN BỊ ROBOT — CHỜ SẴN SÀNG",
+        "HAZARD": "ROBOT GẶP VẬT CẢN — ĐÃ DỪNG",
+        "ACTION_TIMEOUT": "HẾT THỜI GIAN HÀNH ĐỘNG — ROBOT ĐÃ DỪNG",
+        "ODOM_JUMP": "PHẢN HỒI VỊ TRÍ THAY ĐỔI — ROBOT ĐÃ DỪNG",
+        "BAD_ODOM": "PHẢN HỒI VỊ TRÍ LỖI — ROBOT ĐÃ DỪNG",
+        "REARM_WINDOW_EXPIRED": "HẾT LƯỢT CHỜ — GIỮ NEUTRAL ĐỂ SẴN SÀNG",
+    }
     if not fresh:
         message = "ĐANG CHỜ KẾT NỐI ROBOT"
     elif action:
         message = "ĐÃ XÁC NHẬN: " + action["label"].upper() + " — ROBOT ĐANG CHẠY"
     elif not s.get("enabled"):
         message = "ĐÃ DỪNG — NHẤN START ĐỂ TIẾP TỤC"
+    elif reason in errors:
+        message = errors[reason]
+    elif reason == "COMPLETED":
+        message = "HOÀN THÀNH — GIỮ NEUTRAL ĐỂ CHUẨN BỊ LƯỢT MỚI"
     elif s.get("state") == "WAIT_NEUTRAL":
         message = "GIỮ NEUTRAL ĐỂ CHUẨN BỊ LƯỢT MỚI"
-    elif s.get("reason") in ("NO_FACE", "FACE_COUNT_MISMATCH", "MULTIPLE_FACES"):
-        message = "ĐƯA MỘT KHUÔN MẶT RÕ VÀO CAMERA"
     elif s.get("armed") and raw_label and raw_label != "NEUTRAL":
         message = "CHỜ XÁC NHẬN: " + raw_label
     elif s.get("armed"):

@@ -49,6 +49,7 @@ class Motion(Node):
         self.hazard_types = []
         self.tick_count = 0
         self.cmd_seq = -1
+        self.clock_publishers = 0
         # Default wall/steady timer: do not enable use_sim_time on this node.
         self.create_timer(0.05, self.tick)
         self.create_timer(0.5, self.check_graph)
@@ -105,6 +106,8 @@ class Motion(Node):
         self.core.external_publisher = len(infos) != 1 or any(
             i.node_name != "bai08_controller" for i in infos
         )
+        self.clock_publishers = len(self.get_publishers_info_by_topic("/clock"))
+        self.core.external_clock = self.clock_publishers != 1
 
     def publish(self, v, w):
         msg = Twist()
@@ -130,7 +133,8 @@ class Motion(Node):
         self.publish(v, w)
         while self.core.events:
             e = self.core.events.pop(0)
-            e.update(wall=time.time(), session=self.session, source=p.get("source"))
+            e.update(wall=time.time(), session=self.session,
+                     source=p.get("source") if isinstance(p, dict) else None)
             self.log.write(json.dumps(e) + "\n")
         self.tick_count += 1
         status = dict(
@@ -161,6 +165,7 @@ class Motion(Node):
             action=self.core.action,
             hazards=self.hazard_types,
             cmd_publishers=len(self.get_publishers_info_by_topic("/cmd_vel")),
+            clock_publishers=self.clock_publishers,
         )
         self.log.write(json.dumps(dict(event="CONTROL", **status)) + "\n")
         if self.tick_count % 2 == 0:

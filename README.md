@@ -79,3 +79,5 @@ Chỉ chế độ `--component-test` mới nhận scores tổng hợp. Mặc đ�
 ## Giới hạn
 
 Default YuNet ONNX thay Haar sau kiểm tra 19 ảnh webcam thật lưu lại: YuNet tìm một mặt ở 18 ảnh, Haar ở 7 ảnh; phép thử này không đo accuracy emotion. YuNet cũng đã thử ảnh nền không mặt và ảnh ghép hai mặt. Có thể dùng `--detector opencv` để tái tạo backend trước. Detector vẫn có thể mất mặt khi che hoặc nghiêng nhiều. Tracker bbox phát hiện bước nhảy lớn, không xác thực danh tính hay phát hiện mọi lần đổi người cùng vị trí. Fear/Sad có thể nhầm; cần người thật tạo biểu cảm và ghi nhãn định tạo riêng trước khi đánh giá. Không suy luận trạng thái tâm lý thật. Repository source không chứa báo cáo, camera, video, model, log hoặc dữ liệu bài cũ.
+
+Worker giới hạn mỗi ONNX session ở 2 intra-op/1 inter-op threads và tắt busy spinning, OpenCV 1 thread, để không tranh CPU với Gazebo. Đây là cùng model/weights, không thay nhãn hoặc scores bằng tay.

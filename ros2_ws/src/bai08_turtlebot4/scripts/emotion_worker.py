@@ -10,7 +10,20 @@ os.environ.setdefault("DEEPFACE_BACKEND_ENGINE", "onnx")
 os.environ.setdefault("OMP_NUM_THREADS", "2")
 import cv2
 import numpy as np
+import onnxruntime as ort
 from deepface import DeepFace
+
+
+def bounded_session(path):
+    """Keep ONNX CPU pools from starving Gazebo and its control timers."""
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 2
+    options.inter_op_num_threads = 1
+    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+    return ort.InferenceSession(str(path), sess_options=options,
+                                providers=["CPUExecutionProvider"])
 
 
 def main():
@@ -20,6 +33,7 @@ def main():
     ap.add_argument("--seconds", type=float, default=0)
     ap.add_argument("--detector", choices=["opencv", "yunet"], default="yunet")
     args = ap.parse_args()
+    cv2.setNumThreads(1)
     run = Path(args.run)
     run.mkdir(parents=True, exist_ok=True)
     stop = threading.Event()
@@ -76,7 +90,10 @@ def main():
     try:
         # Downloads should be completed by prepare_model.py before demo.
         model = DeepFace.build_model(model_name="Emotion", task="facial_attribute")
-        DeepFace.build_model(model_name=args.detector, task="face_detector")
+        model.model = bounded_session(cache / "facial_expression_model_weights.onnx")
+        detector = DeepFace.build_model(model_name=args.detector, task="face_detector")
+        if args.detector == "yunet":
+            detector.model = bounded_session(cache / "face_detection_yunet_2023mar.onnx")
         DeepFace.analyze(
             np.zeros((48, 48, 3), dtype=np.uint8),
             actions=["emotion"],
@@ -92,6 +109,9 @@ def main():
                 detector=args.detector,
                 wall=time.time(),
                 pid=os.getpid(),
+                onnx_intra_threads=2,
+                onnx_inter_threads=1,
+                onnx_spinning=False,
             ),
         )
         used_frame = -1

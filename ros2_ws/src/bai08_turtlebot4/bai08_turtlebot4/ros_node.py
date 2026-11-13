@@ -102,7 +102,7 @@ class Motion(Node):
 
     def check_graph(self):
         infos = self.get_publishers_info_by_topic("/cmd_vel")
-        self.core.external_publisher = any(
+        self.core.external_publisher = len(infos) != 1 or any(
             i.node_name != "bai08_controller" for i in infos
         )
 

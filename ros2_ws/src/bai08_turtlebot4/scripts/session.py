@@ -6,6 +6,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bai08_turtlebot4.ipc import atomic, read
 
 
+def announce(*args, **kwargs):
+    # A closed terminal must never interrupt child cleanup or retain the webcam.
+    try:
+        print(*args, **kwargs)
+    except OSError:
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--component-test", action="store_true")
@@ -22,7 +30,7 @@ def main():
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
-        print(
+        announce(
             "Bài 08 domain "
             + domain
             + " đang chạy. Đóng phiên cũ hoặc chọn BAI08_DOMAIN khác.",
@@ -101,7 +109,7 @@ def main():
         nonlocal stopped
         meta["stop_signal"] = signal.Signals(_[0]).name if _ else "unknown"
         atomic(run / "session.json", meta)
-        print("STOP requested: " + meta["stop_signal"], flush=True)
+        announce("STOP requested: " + meta["stop_signal"], flush=True)
         (run / "STOP").touch()
         stopped = True
 
@@ -181,14 +189,14 @@ def main():
                 monotonic=time.monotonic(),
             ),
         )
-        print(
+        announce(
             "CONTROL READY: giữ Neutral để rearm; mỗi biểu cảm chỉ một action.",
             flush=True,
         )
 
     result = 0
     try:
-        print(
+        announce(
             "Run: " + str(run) + "\nDomain " + domain + " | " + env["IGN_PARTITION"],
             flush=True,
         )
@@ -255,7 +263,7 @@ def main():
                             "infinity",
                         ],
                     )
-                print(
+                announce(
                     "ROBOT + MODEL READY. "
                     + (
                         "COMPONENT TEST INPUT ONLY"
@@ -309,17 +317,24 @@ def main():
                     )
             time.sleep(0.1)
     except (Exception, KeyboardInterrupt) as e:
-        print("Session: " + repr(e), flush=True)
+        announce("Session: " + repr(e), flush=True)
         result = 1
     finally:
         (run / "STOP").touch()
         # Controller keeps publishing zero; preserve windows until WebM finalized.
         time.sleep(1.0)
-        finish("recorder", timeout=220)
-        finish("worker")
-        finish("panel", signal.SIGTERM)
-        finish("simulation", timeout=45)
-        finish("inhibit_idle", signal.SIGTERM)
+        for name, sig, timeout in (
+            ("recorder", signal.SIGINT, 220),
+            ("worker", signal.SIGTERM, 30),
+            ("panel", signal.SIGTERM, 30),
+            ("simulation", signal.SIGINT, 45),
+            ("inhibit_idle", signal.SIGTERM, 30),
+        ):
+            try:
+                finish(name, sig, timeout)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                meta.setdefault("cleanup_errors", {})[name] = repr(error)
+                result = 1
         for p in procs.values():
             try:
                 os.killpg(p.pid, signal.SIGTERM)
@@ -333,7 +348,7 @@ def main():
         atomic(run / "session.json", meta)
         for log in logs:
             log.close()
-        print(
+        announce(
             (
                 "Session closed. " + str(run) + "\nVideo: " + str(video)
                 if video.exists()

@@ -64,7 +64,7 @@ if vote_mode:
     # A new expression is deliberately ignored during a locked action.
     fault_names.remove("change_label")
 for fault in fault_names:
-    begin()
+    action_id = begin()["action"]["id"]
     start = time.monotonic()
     if fault == "neutral":
         send("neutral")
@@ -102,17 +102,24 @@ for fault in fault_names:
             stopped = time.monotonic()
             break
         time.sleep(0.02)
+    ends = [json.loads(line) for line in (run / "control.jsonl").read_text().splitlines()
+            if '"event": "ACTION_END"' in line]
+    end = next((e for e in reversed(ends) if e["id"] == action_id), {})
+    expected = dict(neutral="NEUTRAL", no_face="NO_FACE",
+                    multiple_faces="FACE_COUNT_MISMATCH", low_confidence="LOW_CONFIDENCE",
+                    disgust="OUTSIDE_SET", gui_stop="GUI_STOP", change_label="LABEL_CHANGED",
+                    stale_prediction="PREDICTION_STALE", replayed_prediction="PREDICTION_STALE")
     results.append(
         dict(
             source="component_test + actual simulation odom",
             fault=fault,
             zero_delay_s=first_zero - start if first_zero else None,
             actual_stop_s=stopped - start if stopped else None,
-            reason=s.get("reason"),
+            reason=end.get("reason"),
+            status_reason=s.get("reason"),
             pass_=bool(
                 stopped and stopped - start < 1.4
-                and (fault != "low_confidence" or s.get("reason") == "LOW_CONFIDENCE")
-                and (fault != "change_label" or s.get("reason") == "LABEL_CHANGED")
+                and end.get("reason") == expected[fault]
             ),
         )
     )

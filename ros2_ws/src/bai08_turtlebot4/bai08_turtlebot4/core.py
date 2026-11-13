@@ -287,6 +287,11 @@ class Controller:
         counts = Counter(k for _, k in self.votes if k is not None)
         if not self.enabled or not self.healthy(now):
             return
+        if not accepted:
+            self.stable = None
+            self.state = "READY" if self.armed else "STOPPED"
+            self.reason = "LOW_CONFIDENCE_WAIT_STABLE" if self.armed else "LOW_CONFIDENCE"
+            return
         if not self.armed:
             if counts["neutral"] >= self.cfg["vote_min"]:
                 self.armed = True

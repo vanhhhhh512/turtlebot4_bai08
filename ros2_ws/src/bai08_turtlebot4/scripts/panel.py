@@ -114,6 +114,7 @@ def refresh():
         "MALFORMED_PREDICTION": "DỮ LIỆU NHẬN DIỆN LỖI — ROBOT ĐÃ DỪNG",
         "OUTSIDE_SET": "DISGUST — ROBOT DỪNG; GIỮ NEUTRAL ĐỂ TIẾP TỤC",
         "LOW_CONFIDENCE": "BIỂU CẢM CHƯA RÕ — GIỮ NEUTRAL ĐỂ THỬ LẠI",
+        "LOW_CONFIDENCE_WAIT_STABLE": "BIỂU CẢM CHƯA RÕ — NHÌN THẲNG VÀ GIỮ NÉT MẶT",
         "ODOM_STALE": "MẤT PHẢN HỒI ROBOT — ĐÃ DỪNG ĐIỀU KHIỂN",
         "CLOCK_STALE": "MÔ PHỎNG ĐANG TẠM DỪNG — CHỜ KẾT NỐI",
         "PREDICTION_STALE": "ĐANG CHỜ HÌNH CAMERA MỚI — ROBOT DỪNG",

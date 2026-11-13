@@ -6,10 +6,10 @@ LABELS = ("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
 DEFAULT = dict(
     confidence=0.55,
     margin=0.18,
-    hold=0.65,
+    hold=0.40,
     neutral_hold=0.6,
     prediction_timeout=0.9,
-    rearm_window=3.0,
+    rearm_window=8.0,
     odom_timeout=0.5,
     clock_timeout=0.6,
     linear=0.10,
@@ -177,7 +177,15 @@ class Controller:
                         else "LOW_CONFIDENCE", now,
                     )
                 return True
-            if not confident:
+            filtered_confident = (
+                self.scores[label] >= self.cfg["confidence"]
+                and self.scores[label] - self.scores[order[1]] >= self.cfg["margin"]
+            )
+            # A clear Neutral frame must never launch a lagging EMA action.
+            if self.raw == "neutral" and confident and label != "neutral":
+                self.candidate = None
+                return True
+            if not filtered_confident:
                 # A human passes through uncertain scores while changing face.
                 # Only an unused Neutral permit may survive this short idle gap;
                 # an interrupted action has already been canceled and disarmed.
@@ -186,13 +194,11 @@ class Controller:
                     self.state, self.reason = "STOPPED", "LOW_CONFIDENCE_WAIT_STABLE"
                     self.candidate = None
                     self.stable = None
-                    self.scores = None
                 else:
                     self.cancel("LOW_CONFIDENCE", now)
                 return True
             if (
-                label != self.raw
-                or self.scores[label] < self.cfg["confidence"]
+                self.scores[label] < self.cfg["confidence"]
                 or self.scores[label] - self.scores[order[1]] < self.cfg["margin"]
             ):
                 self.candidate = None
@@ -214,6 +220,8 @@ class Controller:
                     and self.healthy(now)
                 ):
                     self.start(label, now)
+                elif not self.armed and self.enabled and self.healthy(now):
+                    self.state, self.reason = "WAIT_NEUTRAL", "REQUIRE_NEUTRAL"
             return True
         except (KeyError, TypeError, ValueError, OverflowError):
             self.cancel("MALFORMED_PREDICTION", now)

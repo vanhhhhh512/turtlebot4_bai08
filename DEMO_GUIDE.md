@@ -12,3 +12,5 @@
 Log nhãn đối chiếu (người thực hiện định tạo) phải do người dùng xác nhận. Chỉ log dự đoán model không đủ tính accuracy hoặc confusion matrix. Tất cả lượt sai được giữ.
 
 Bộ lọc khi đang chạy có hysteresis: ngưỡng bắt đầu 0.55/margin 0.18, duy trì trên EMA 0.40/margin 0.06; mất hỗ trợ liên tục 0.30 s thì hủy. Một frame nhiễu không hủy ngay. Neutral rõ/mất mặt/STOP vẫn dừng ngay; sau khi hủy cần Neutral mới.
+
+Nhãn thô đúng chưa chắc robot đã được phép chạy: nếu WAIT_NEUTRAL, giữ Neutral tới READY rồi đổi biểu cảm trong 8 s. Bộ lọc xét EMA, giữ nhãn 0.40 s để khởi động. Giữ terminal của phiên mở trong lúc demo; đóng terminal sẽ STOP và finalize.

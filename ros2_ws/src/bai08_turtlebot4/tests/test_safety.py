@@ -169,6 +169,25 @@ class Safety(unittest.TestCase):
             self.assertIsNotNone(self.c.action)
         self.assertEqual(self.c.counter, 1)
 
+    def test_start_filter_survives_isolated_weak_frames(self):
+        self.stable("neutral")
+        for i in range(10):
+            scores = {k: 0.0 for k in LABELS}
+            scores.update(happy=0.50 if i % 3 == 2 else 0.90,
+                          neutral=0.30 if i % 3 == 2 else 0.05,
+                          sad=0.20 if i % 3 == 2 else 0.05)
+            self.frame("happy", scores=scores)
+        self.assertIsNotNone(self.c.action)
+        self.assertEqual(self.c.action["label"], "happy")
+
+    def test_clear_neutral_cannot_launch_lagging_ema_action(self):
+        self.stable("neutral")
+        self.frame("happy")
+        self.frame("happy")
+        self.assertIsNone(self.c.action)
+        self.frame("neutral")
+        self.assertIsNone(self.c.action)
+
     def test_persistent_uncertainty_cancels_and_never_resumes(self):
         self.begin("fear")
         start = self.t
@@ -184,7 +203,7 @@ class Safety(unittest.TestCase):
     def test_uncertain_idle_permit_expires(self):
         self.stable("neutral")
         weak = {k: 1 / 7 for k in LABELS}
-        for _ in range(40):
+        for _ in range(100):
             self.frame("happy", scores=weak)
         self.assertFalse(self.c.armed)
         self.stable("happy")

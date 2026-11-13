@@ -151,29 +151,41 @@ def main():
             p.wait(timeout=15)
 
     lock_cache = [0.0, False]
+    lock_failures = 0
 
     def locked():
+        nonlocal lock_failures
         if a.headless:
             return False
         if time.monotonic() - lock_cache[0] < 1:
             return lock_cache[1]
-        check = subprocess.run(
-            [
-                "gdbus",
-                "call",
-                "--session",
-                "--dest",
-                "org.gnome.ScreenSaver",
-                "--object-path",
-                "/org/gnome/ScreenSaver",
-                "--method",
-                "org.gnome.ScreenSaver.GetActive",
-            ],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
+        try:
+            check = subprocess.run(
+                [
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.gnome.ScreenSaver",
+                    "--object-path",
+                    "/org/gnome/ScreenSaver",
+                    "--method",
+                    "org.gnome.ScreenSaver.GetActive",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if check.returncode != 0:
+                raise RuntimeError("Screen lock query failed: " + check.stderr.strip())
+        except (subprocess.TimeoutExpired, RuntimeError):
+            lock_failures += 1
+            lock_cache[0] = time.monotonic()
+            if lock_failures >= 3:
+                raise RuntimeError("Không kiểm tra được khóa màn hình sau 3 lần; dừng phiên.")
+            return lock_cache[1]
+        lock_failures = 0
         lock_cache[:] = [time.monotonic(), "(true,)" in check.stdout]
         return lock_cache[1]
 

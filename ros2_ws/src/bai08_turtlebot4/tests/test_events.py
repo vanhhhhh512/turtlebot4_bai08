@@ -1,4 +1,4 @@
-"""Default event policy: synthetic component packets, never webcam accuracy."""
+"""Historical event policy: synthetic component packets, never webcam accuracy."""
 import math
 import sys
 import unittest
@@ -10,7 +10,7 @@ from bai08_turtlebot4.presentation import StatusPresenter
 
 class Events(unittest.TestCase):
     def setUp(self):
-        self.c = Controller('event-test', allow_test=True)
+        self.c = Controller('event-test', {"decision_mode": "events"}, allow_test=True)
         self.t, self.seq = 10., 0
         self.pose = (0., 0., 0.)
 

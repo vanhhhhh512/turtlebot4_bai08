@@ -62,8 +62,9 @@ fault_names = [
     "gui_stop",
     "change_label",
 ]
-event_mode = read(run / "effective_config.json").get("decision_mode") == "events"
-vote_mode = read(run / "effective_config.json").get("decision_mode") in ("votes", "events")
+mode = read(run / "effective_config.json").get("decision_mode")
+event_mode = mode in ("events", "temporal")
+vote_mode = mode in ("votes", "events", "temporal")
 if vote_mode:
     # A new expression is deliberately ignored during a locked action.
     fault_names.remove("change_label")
@@ -97,6 +98,8 @@ for fault in fault_names:
         # here would intentionally rearm, invalidating the no-resume check.
         if fault == "low_confidence":
             send("fear", scores={k: 1 / 7 for k in LABELS})
+        elif fault == "neutral" and mode == "temporal":
+            send("neutral")
         elif fault == "change_label":
             send("angry")
         s = read(run / "status.json")

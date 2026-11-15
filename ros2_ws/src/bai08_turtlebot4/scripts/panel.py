@@ -59,7 +59,11 @@ def set_votes(visible):
 
 def update_votes(status):
     for label, widget in vote_labels.items():
-        text = f"{status.get('vote_counts', {}).get(label, 0)}/57" if show_votes else ""
+        if status.get("decision_mode") == "temporal":
+            mean = status.get("temporal", {}).get("scores", {})
+            text = f"TB {mean[label]*100:.0f}%" if show_votes and label in mean else ""
+        else:
+            text = f"{status.get('vote_counts', {}).get(label, 0)}/57" if show_votes else ""
         if widget.cget("text") != text:
             widget.configure(text=text)
 
@@ -76,7 +80,7 @@ for label in ("happy", "sad", "neutral", "angry", "surprise", "fear", "disgust")
     val = ttk.Label(row, text="0.0%", width=7)
     val.pack(side="left")
     bars[label] = (bar, val)
-    count = ttk.Label(row, text="", width=5, anchor="e")
+    count = ttk.Label(row, text="", width=7, anchor="e")
     count.pack(side="left")
     vote_labels[label] = count
 plot = tk.Canvas(right, width=350, height=306, bg="white", highlightthickness=0)

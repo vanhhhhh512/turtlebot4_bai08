@@ -13,18 +13,16 @@ Webcam thật → YuNet detector + DeepFace 0.0.104 Emotion ONNX CPU → lọc t
 | surprise | 0 | +0.35 | tích lũy 2π rad |
 | fear | +0.10 | 0 | tiến 0.23 m |
 
-Bộ chốt mặc định dùng `decision_mode=events`, tách nhận lệnh mới khỏi khóa chống chạy lặp:
+Bộ chốt mặc định dùng `decision_mode=temporal`, lấy trung bình **toàn bộ 7 scores theo thời gian capture**, không còn nhánh một frame>57% hoặc11/57:
 
-- Khi đã START, robot khỏe và có một prediction mới hợp lệ **top-1>0.57**, lượt đầu chạy ngay, không cần Neutral, không hold/EMA/11 phiếu. So giá trị thật:0.5700 chưa đủ nhánh nhanh,0.5701 đủ dù UI làm tròn thành57.0%.
-- Một action hữu hạn khóa biểu cảm đã nhận. Giữ nguyên biểu cảm sau khi xong không phát lại. Trong lúc chạy, biểu cảm khác không chen lệnh, không được xếp hàng cho lượt sau.
-- Sau khi action hết hoặc bị hủy, biểu cảm khác cần **2 prediction hợp lệ liên tiếp** của chính biểu cảm đó. Chỉ đếm từ sau khi action kết thúc; prediction cũ, yếu hoặc mất mặt ngắt chuỗi. Khi đủ điều kiện, score>0.57 chạy ngay ở prediction thứ hai.
-- Muốn lặp cùng biểu cảm: Neutral được xác nhận, hoặc đưa mặt/ảnh ra khỏi camera **ít nhất1s**, rồi đưa lại. Chỉ các packet NO_FACE mới liên tục được tính; camera lỗi, mất prediction, replay hoặc nhiều mặt không mở khóa.
-- Mất mặt khi đang chờ chỉ chuyển sang chờ khuôn mặt. Khi đang chạy, mất mặt vẫn dừng/hủy ngay; biểu cảm đã tiêu thụ vẫn khóa, không tự tiếp tục action cũ khi mặt trở lại.
-- Score≤0.57 dùng **11 phiếu trong57 prediction** dự phòng; mỗi phiếu top-1≥0.40, margin≥0.06. Số phiếu trên UI luôn là dữ liệu thật, không nâng thành11 khi nhánh nhanh đã chấp thuận.
+- Cửa sổ **0.5s**, trung bình có trọng số thời gian bằng tích phân hình thang trên các mẫu đã nhận. Cần phủ đủ cửa sổ, ít nhất3mẫu; gap>0.35s bắt đầu lại. Không dùng frame tương lai.
+- Nhãn đứng đầu có **mean≥0.55**, cách nhãn thứ hai **≥0.15** (15điểm phần trăm), đồng ý với top1 hiện tại, liên tục **0.2s** mới xác nhận. Đầu vào ổn định từ đầu cần khoảng0.7s cộng inference/lịch xử lý. Không bắt Neutral trước lượt đầu.
+- **Các giá trị trên là cấu hình tạm, chưa tối ưu trên video webcam có nhãn.** Hai đoạn Angry/Neutral calibration cũ không dùng chọn tham số theo yêu cầu người dùng. Công cụ đánh giá, cách gán nhãn, chia selection/holdout và đo sai/độ trễ ở [TEMPORAL_EVALUATION.md](TEMPORAL_EVALUATION.md).
+- Mỗi action hữu hạn khóa nhãn đã nhận. Giữ ảnh sau khi xong không chạy lặp. Biểu cảm khác chỉ được xác nhận từ cửa sổ mới sau action; đang chạy không chen lệnh hoặc xếp hàng.
+- Lặp cùng biểu cảm bằng Neutral đã xác nhận hoặc NO_FACE mới liên tục≥1s rồi đưa mặt/ảnh lại. Camera lỗi, silence, replay hoặc nhiều mặt không mở lượt. Mất mặt khi đang chạy hủy ngay, cùng biểu cảm trở lại không tự tiếp tục.
+- Neutral dùng cùng mean/margin/hold, không dừng bằng một frame cao. **STOP, Disgust, mất mặt/nhiều mặt và lỗi vẫn dừng độc lập.** Điểm raw yếu (top1<0.40 hoặc margin<0.06) liên tục0.5s hủy action. START, lỗi, bắt đầu/kết thúc/hủy action và mở lượt đều xóa lịch sử bộ lọc.
 
-Neutral>0.57 vẫn dừng ngay và mở lượt mới; Neutral≤0.57 dùng11 phiếu để mở lại cùng biểu cảm. Khi đang chạy, Neutral rõ (score≥0.55, margin≥0.18) liên tục0.8s vẫn có quyền dừng; điểm yếu kéo dài0.5s hủy. Disgust/mất mặt/nhiều mặt vẫn STOP, không gán thành một chuyển động khác.
-
-STOP, lỗi camera/model, hazard, odom/clock quá hạn, trùng publisher, timeout action hoặc prediction quá hạn được giữ khóa sau khi đã hoạt động: sửa lỗi rồi bấm START để xác nhận mở lại. START yêu cầu frame được capture sau lệnh; không chạy prediction tồn từ trước START. Watchdog prediction0.9s, odom0.5s, clock0.6s vẫn giữ. Không còn permitNeutral8s trong chế độ mới. Cấu hình `votes`/`ema` cũ còn để tái tạo các run trước; không phải mặc định hiện hành. Các ngưỡng là thiết kế, không phải accuracy.
+STOP, lỗi camera/model, hazard, odom/clock quá hạn, trùng publisher, timeout action hoặc prediction quá hạn được giữ khóa sau khi đã hoạt động: sửa lỗi rồi bấm START. Chỉ frame capture sau START được nhận; watchdog prediction0.9s, odom0.5s, clock0.6s giữ nguyên. Không có permitNeutral8s. Các mode `events`/`votes`/`ema` còn để tái tạo run cũ, không phải mặc định. Mean/score không phải accuracy và không sửa được nhận sai liên tục của model.
 
 ## Cài đặt
 
@@ -63,17 +61,19 @@ bash start_demo.sh
 
 Đóng phiên cũ trước khi mở lại. Mỗi lần tạo run ID, ROS domain 108, IGN partition riêng và file WebM mới. Lock domain chống chạy hai phiên. Có thể đặt `BAI08_DOMAIN=109`. Chỉ chạy môi trường Humble sạch; launcher loại bỏ overlay Python/ROS kế thừa. Model assets phải được chuẩn bị trước, nếu thiếu thì worker báo lỗi, không READY giả.
 
-Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật chờ Neutral sau khi FFmpeg thực sự tạo file. Truy vấn khóa màn hình lỗi tạm thời được thử lại; ba lỗi liên tiếp dừng có kiểm soát. Cleanup vẫn tiếp tục nếu terminal đóng hoặc một tiến trình kết thúc lỗi. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
+Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật nhận biểu cảm sau khi FFmpeg thực sự tạo file. Truy vấn khóa màn hình lỗi tạm thời được thử lại; ba lỗi liên tiếp dừng có kiểm soát. Cleanup vẫn tiếp tục nếu terminal đóng hoặc một tiến trình kết thúc lỗi. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
 
-Đưa một khuôn mặt/ảnh vào khung khi hệ thống sẵn sàng. Lượt đầu>57% chạy ngay. Giữ nguyên ảnh không chạy lặp; đổi sang biểu cảm khác cần2prediction mới liên tiếp sau khi action hết. Dùng Neutral hoặc đưa ảnh ra≥1s để lặp cùng biểu cảm. Surprise cần khoảng18s ở0.35rad/s. STOP và lỗi robot giữ khóa đến START. **Ctrl+C một lần**: latch STOP ngay, chờ robot dừng, FFmpeg nhận `q` để finalize rồi đóng đúng nhóm process. Không kill rộng hoặc kill-9 recorder.
+Đưa một khuôn mặt/ảnh vào khung và giữ biểu cảm rõ khoảng một giây khi hệ thống sẵn sàng. Chương trình chốt bằng mean/margin/thời gian ổn định; giữ ảnh không chạy lặp. Đổi biểu cảm sau action, hoặc Neutral/đưa ảnh ra≥1s để lặp cùng biểu cảm. Surprise cần khoảng18s ở0.35rad/s. STOP và lỗi robot giữ khóa đến START. **Ctrl+C một lần**: STOP, chờ robot dừng, FFmpeg nhận `q` để finalize rồi đóng đúng nhóm process. Không kill rộng hoặc kill-9 recorder.
+
+Cấu hình đã đánh giá có thể truyền bằng `bash start_demo.sh --control-config verification/selected_control.json`; launcher lưu lại trong run. Xem hướng dẫn đánh giá trước khi gọi một cấu hình là đã hiệu chỉnh.
 
 ## Log và kiểm chứng
 
 `runs/<id>/`: session.json (PID/domain/partition), predictions.jsonl (source webcam, frame/seq/timestamps/raw percentages/normalized scores/bbox), control.jsonl (Twist/FSM/events), odom.jsonl, effective_config.json, status.json, recording.json. Hình camera và log chỉ local. `results/demo_<id>.webm`: hình cửa sổ thật 12 FPS, VP8. Recorder kiểm decode toàn bộ, xuất first/last PNG; cần xem hình để xác nhận nội dung.
 
-Frame camera phải tăng cùng sequence và timestamp; frame lặp không làm mới watchdog hoặc thêm phiếu. Chỉ dữ liệu mới sau action được dùng để xác nhận đổi biểu cảm; không phát lại lệnh đã tiêu thụ. Quãng tiến/lùi được tích phân có dấu trong frame robot; chuyển động ngược hướng không được tính hoàn thành.
+Frame camera phải tăng cùng sequence và timestamp; frame lặp không làm mới watchdog hoặc thêm mẫu vào bộ lọc. Chỉ dữ liệu mới sau action được dùng để xác nhận đổi biểu cảm; không phát lại lệnh đã tiêu thụ. Quãng tiến/lùi được tích phân có dấu trong frame robot; chuyển động ngược hướng không được tính hoàn thành.
 
-Log `EXPRESSION_RELEASED` ghi cách mở lượt bằng Neutral hoặc mất mặt đủ1s. Status có locked_label, change_count và fault_latched để audit; không đưa các trường kỹ thuật lên GUI. Log `DECISION_ACCEPTED` và `ACTION_START` phân biệt `score_fast_path`/`vote_threshold`, giữ score, seq, frame_id, capture_mono và action_id thật. `effective_config.json` lưu ngưỡng chấp thuận nhanh.
+Log `EXPRESSION_RELEASED` ghi Neutral/mất mặt đủ1s. `DECISION_ACCEPTED` và `ACTION_START` ghi branch=`temporal_mean`, mean score, raw score, toàn bộ scores trung bình, margin, thời gian phủ/ổn định, timestamps, số mẫu và action_id. Status lưu `temporal` để audit/UI. `effective_config.json` giữ tham số thực của phiên; các log score_fast_path/vote_threshold trong run cũ thuộc thuật toán lịch sử.
 
 Yaw hoàn thành từ tổng sai phân atan2(sin Δ,cos Δ), không so hướng đầu/cuối. Cung theo frame robot (+x tiến,+z quay trái), không đảo dấu theo camera. Đường XY là odom thực; UI không vẽ đường mục tiêu thay kết quả.
 
@@ -87,7 +87,7 @@ bash start_demo.sh --component-test --headless --no-record
 # terminal khác, dùng đúng run path vừa in:
 python3 ros2_ws/src/bai08_turtlebot4/scripts/check_motion.py runs/RUN_ID
 python3 ros2_ws/src/bai08_turtlebot4/scripts/check_faults.py runs/RUN_ID
-python3 ros2_ws/src/bai08_turtlebot4/scripts/check_event_policy.py runs/RUN_ID
+python3 ros2_ws/src/bai08_turtlebot4/scripts/check_temporal_policy.py runs/RUN_ID
 ```
 
 Chỉ chế độ `--component-test` mới nhận scores tổng hợp. Mặc định chỉ nhận source webcam của worker. Test logic/mapping và odom mô phỏng không đo accuracy nhận diện. Không có nút chọn nhãn trong GUI.
@@ -98,6 +98,6 @@ Default YuNet ONNX thay Haar sau kiểm tra 19 ảnh webcam thật lưu lại: Y
 
 Worker giới hạn mỗi ONNX session ở 2 intra-op/1 inter-op threads và tắt busy spinning, OpenCV 1 thread, để không tranh CPU với Gazebo. Đây là cùng model/weights, không thay nhãn hoặc scores bằng tay.
 
-GUI giữ trạng thái theo FSM/action_id đã chốt, không đổi status theo top-1 từng frame. Scores vẫn cập nhật realtime. Mặc định ẩn bộ đếm; khi cửa sổ có focus, phím **1** hiện số phiếu thật `x/57` cạnh từng nhãn, phím **2** ẩn. Hai phím chỉ đổi hiển thị, không reset phiếu hoặc phát lệnh. GUI không có nút/hint phím, caption chẩn đoán hay chữ audio; footer chỉ báo quay WebM.
+GUI giữ trạng thái theo FSM/action_id đã chốt, không đổi status theo top-1 từng frame. Scores vẫn cập nhật realtime. Mặc định ẩn cột điểm trung bình; khi cửa sổ có focus, phím **1** hiện `TB xx%` từ mean thật cạnh từng nhãn, phím **2** ẩn. Hai phím chỉ đổi hiển thị, không reset bộ lọc hoặc phát lệnh. Mode lịch sử vẫn hiển thị phiếu x/57 khi được chọn tường minh. GUI không có nút/hint phím, caption chẩn đoán hay chữ audio; footer chỉ báo quay WebM.
 
 Trajectory dùng odom thực, phân đoạn theo action_id/nhãn chốt/thời gian; không nối qua action hoặc odom jump. Màu cố định: Happy xanh dương, Sad cam, Angry đỏ, Fear xanh lá, Surprise tím, Neutral xám; có legend. Đoạn odom ngoài action hiển thị xám đứt nét, không gán biểu cảm. Neutral là marker tại pose dừng; Surprise dùng marker/hướng và góc yaw tích lũy thật, không dựng vòng tròn XY. Grid và các đối tượng Canvas được giữ lại qua refresh.

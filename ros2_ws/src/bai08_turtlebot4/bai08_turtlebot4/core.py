@@ -2,10 +2,18 @@
 
 import math
 from collections import Counter, deque
+from .temporal import TemporalScores
 
 LABELS = ("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
 DEFAULT = dict(
-    decision_mode="events",
+    decision_mode="temporal",
+    temporal_window=0.50,
+    temporal_hold=0.20,
+    temporal_confidence=0.55,
+    temporal_margin=0.15,
+    temporal_max_gap=0.35,
+    temporal_min_samples=3,
+    temporal_low_hold=0.50,
     change_predictions=2,
     face_release_seconds=1.0,
     vote_window=57,
@@ -44,6 +52,12 @@ def wrap(a):
 class Controller:
     def __init__(self, session, config=None, allow_test=False):
         self.cfg = dict(DEFAULT, **(config or {}))
+        if self.cfg["decision_mode"] not in ("temporal", "events", "votes", "ema"):
+            raise ValueError("Unknown decision_mode")
+        self.event_mode = self.cfg["decision_mode"] in ("events", "temporal")
+        self.temporal = TemporalScores(**{
+            k: self.cfg["temporal_" + k] for k in
+            ("window", "hold", "confidence", "margin", "max_gap", "min_samples")})
         self.session, self.allow_test = session, allow_test
         self.last_seq, self.capture_at, self.last_pred = -1, -1e9, -1e9
         self.last_frame = -1
@@ -78,7 +92,8 @@ class Controller:
         self.events.append(dict(event=event, monotonic=now, **kw))
 
     def cancel(self, reason, now):
-        if self.cfg["decision_mode"] == "events":
+        self.temporal.reset()
+        if self.event_mode:
             hard = reason in {
                 "GUI_STOP", "OTHER_CMD_PUBLISHER", "OTHER_CLOCK_PUBLISHER", "HAZARD",
                 "ROBOT_NOT_PREPARED", "ODOM_STALE", "CLOCK_STALE", "BAD_ODOM",
@@ -151,7 +166,7 @@ class Controller:
             if (
                 not math.isfinite(stamp)
                 or stamp <= self.capture_at
-                or (self.cfg["decision_mode"] == "events" and stamp <= self.accept_after)
+                or (self.event_mode and stamp <= self.accept_after)
                 or stamp > now + 0.05
                 or now - stamp > self.cfg["prediction_timeout"]
             ):
@@ -168,7 +183,7 @@ class Controller:
                           else "FACE_COUNT_MISMATCH" if p.get("faces") != 1
                           else "FACE_CHANGED")
                 self.cancel(reason, now)
-                if self.cfg["decision_mode"] == "events" and reason == "NO_FACE" and p.get("faces") == 0:
+                if self.event_mode and reason == "NO_FACE" and p.get("faces") == 0:
                     self.observe_absence(now)
                 return True
             s = p["scores"]
@@ -187,9 +202,12 @@ class Controller:
             if self.raw == "disgust":
                 self.cancel("OUTSIDE_SET", now)
                 return True
-            if self.cfg["decision_mode"] == "events":
+            if self.event_mode:
                 self.absence_since = self.absence_last = None
-                self.event_prediction(s, raw, confident, now)
+                if self.cfg["decision_mode"] == "temporal":
+                    self.temporal_prediction(s, raw, now)
+                else:
+                    self.event_prediction(s, raw, confident, now)
                 return True
             # Expiry must be checked before the new frame can launch an action.
             if self.armed and now > self.armed_until:
@@ -283,9 +301,9 @@ class Controller:
     def request_start(self, now):
         """An explicit START acknowledges faults and opens a fresh input round."""
         self.enabled = True
-        self.cancel("START_WAIT_PREDICTION" if self.cfg["decision_mode"] == "events"
+        self.cancel("START_WAIT_PREDICTION" if self.event_mode
                     else "START_REQUIRE_NEUTRAL", now)
-        if self.cfg["decision_mode"] == "events":
+        if self.event_mode:
             self.fault_latched = None
             self.locked_label = None
             self.accept_after = now
@@ -293,6 +311,7 @@ class Controller:
             self.state, self.reason = "WAIT_INPUT", "WAIT_PREDICTION"
 
     def release_expression(self, cause, now):
+        self.temporal.reset()
         if self.locked_label is not None:
             self.emit("EXPRESSION_RELEASED", now, label=self.locked_label,
                       cause=cause, seq=self.last_seq, frame_id=self.last_frame)
@@ -311,6 +330,49 @@ class Controller:
         self.absence_last = self.capture_at
         if self.capture_at - self.absence_since >= self.cfg["face_release_seconds"]:
             self.release_expression("face_absence", now)
+
+    def temporal_prediction(self, scores, order, now):
+        """The event lifecycle with one causal score filter for every new label."""
+        if not self.enabled or not self.healthy(now) or self.fault_latched:
+            self.temporal.reset()
+            return
+        self.ever_ready = True
+        result = self.temporal.add(self.capture_at, scores)
+        label, mean = result["label"], result["scores"]
+        if self.action:
+            self.stable = self.action["label"]
+            if result["confirmed"] and label == "neutral":
+                ident = self.action["id"]
+                # Keep the actual confirming window in the audit before reset.
+                self.decision(label, mean, "temporal_mean", now, ident)
+                self.cancel("NEUTRAL", now)
+                self.release_expression("neutral", now)
+                self.stable = "neutral"
+                self.armed = True
+                self.state, self.reason = "READY", "NEUTRAL_STOPPED"
+                return
+            supported = (scores[order[0]] >= self.cfg["release_confidence"] and
+                         scores[order[0]] - scores[order[1]] >= self.cfg["release_margin"])
+            if supported:
+                self.uncertain_since = None
+            elif self.uncertain_since is None:
+                self.uncertain_since = self.capture_at
+            elif self.capture_at - self.uncertain_since >= self.cfg["temporal_low_hold"]:
+                self.cancel("LOW_CONFIDENCE", now)
+            return  # Other expressions cannot interrupt or queue another action.
+        self.armed = self.locked_label is None
+        self.state, self.reason = ("WAIT_RELEASE", "EXPRESSION_HELD") if self.locked_label else (
+            "WAIT_INPUT", "WAIT_STABLE_EXPRESSION")
+        if not result["confirmed"]:
+            return
+        if label == "neutral":
+            if self.locked_label is not None or self.stable != "neutral":
+                self.decision(label, mean, "temporal_mean", now)
+                self.release_expression("neutral", now)
+            self.stable, self.armed = "neutral", True
+            self.state, self.reason = "READY", "WAIT_EXPRESSION"
+        elif label != self.locked_label:
+            self.accept_action(label, mean, "temporal_mean", now)
 
     def event_prediction(self, scores, order, neutral_confident, now):
         """Initial input is immediate; only a consumed expression needs release."""
@@ -377,7 +439,10 @@ class Controller:
             seq=self.last_seq, frame_id=self.last_frame, capture_mono=self.capture_at,
             action_id=action_id, monotonic=now, pose=self.pose,
         )
-        if self.cfg["decision_mode"] == "events":
+        if self.event_mode:
+            if branch == "temporal_mean":
+                self.confirmation.update(temporal=dict(self.temporal.snapshot),
+                                         raw_score=self.temporal.samples[-1][1][label])
             self.confirmation.update(previous_label=self.locked_label,
                                      change_count=self.change_count)
         self.emit("DECISION_ACCEPTED", now,
@@ -472,7 +537,8 @@ class Controller:
         self.stable = label
         self.decision(label, scores, branch, now, self.counter + 1)
         self.start(label, now, {k: self.confirmation[k] for k in
-                              ("branch", "score", "seq", "frame_id", "capture_mono")})
+                              ("branch", "score", "seq", "frame_id", "capture_mono",
+                               "raw_score", "temporal") if k in self.confirmation})
 
     def healthy(self, now):
         return (
@@ -488,6 +554,7 @@ class Controller:
     def start(self, label, now, decision=None):
         if label not in ("happy", "sad", "angry", "fear", "surprise"):
             return
+        self.temporal.reset()
         self.counter += 1
         self.uncertain_since = None
         self.neutral_since = None
@@ -503,7 +570,7 @@ class Controller:
             **(decision or {}),
         )
         self.armed = False
-        if self.cfg["decision_mode"] == "events":
+        if self.event_mode:
             self.locked_label = label
             self.change_label, self.change_count = None, 0
         self.state, self.reason = "EXECUTING", label
@@ -519,18 +586,18 @@ class Controller:
             ("ODOM_STALE", now - self.odom_at >= self.cfg["odom_timeout"]),
             ("CLOCK_STALE", now - self.clock_at >= self.cfg["clock_timeout"]),
             ("PREDICTION_STALE", now - (max(self.capture_at, self.accept_after)
-              if self.cfg["decision_mode"] == "events" else self.capture_at)
+              if self.event_mode else self.capture_at)
               >= self.cfg["prediction_timeout"]),
         )
         issue = next((reason for reason, active in issues if active), None)
         if issue:
             self.cancel(issue, now)
             return (0.0, 0.0)
-        if self.cfg["decision_mode"] == "events" and self.fault_latched:
+        if self.event_mode and self.fault_latched:
             self.state, self.reason = "FAULT", self.fault_latched
             self.speed = (0.0, 0.0)
             return self.speed
-        if self.cfg["decision_mode"] != "events" and self.armed and now > self.armed_until:
+        if not self.event_mode and self.armed and now > self.armed_until:
             self.cancel("REARM_WINDOW_EXPIRED", now)
         if self.action:
             a = self.action
@@ -554,11 +621,12 @@ class Controller:
             if amount >= target:
                 self.emit("ACTION_END", now, **a, reason="completed", pose=self.pose)
                 self.action = None
+                self.temporal.reset()
                 self.votes.clear()
                 self.neutral_since = None
                 self.change_label, self.change_count = None, 0
                 self.state, self.reason = (
-                    "WAIT_RELEASE" if self.cfg["decision_mode"] == "events" else "WAIT_NEUTRAL",
+                    "WAIT_RELEASE" if self.event_mode else "WAIT_NEUTRAL",
                     "COMPLETED")
             elif now - a["start"] > cfg["action_timeout"]:
                 self.cancel("ACTION_TIMEOUT", now)

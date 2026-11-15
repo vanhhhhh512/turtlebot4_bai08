@@ -22,7 +22,16 @@ def main():
     ap.add_argument("--camera", type=int, default=0)
     ap.add_argument("--microphone")
     ap.add_argument("--detector", choices=["opencv", "yunet"], default="yunet")
+    ap.add_argument("--control-config", type=Path,
+                    help="JSON controller parameters, saved in the new run for audit")
     a = ap.parse_args()
+    control_config = None
+    if a.control_config:
+        from bai08_turtlebot4.core import Controller, DEFAULT
+        control_config = json.loads(a.control_config.read_text())
+        if not isinstance(control_config, dict) or set(control_config) - set(DEFAULT):
+            ap.error("control-config must contain known controller parameters")
+        Controller("validate-config", control_config)
     package = Path(__file__).resolve().parents[1]
     root = package.parents[2]
     domain = os.environ.get("BAI08_DOMAIN", "108")
@@ -40,6 +49,8 @@ def main():
     session = time.strftime("%Y%m%d_%H%M%S") + "_" + str(os.getpid())
     run = root / "runs" / session
     run.mkdir(parents=True)
+    if control_config is not None:
+        atomic(run / "control_config.json", control_config)
     (
         run / "STOP"
     ).touch()  # Startup stays disarmed until robot/model/recorder readiness.
@@ -201,12 +212,16 @@ def main():
                 monotonic=time.monotonic(),
             ),
         )
-        announce(
-            "CONTROL READY: biểu cảm mới >"
-            + format(read(run / "effective_config.json").get("score_fast_threshold", .57) * 100, "g")
-            + "% nhận ngay; giữ ảnh không chạy lặp.",
-            flush=True,
-        )
+        cfg = read(run / "effective_config.json")
+        if cfg.get("decision_mode") == "temporal":
+            message = (f"CONTROL READY: trung bình {cfg['temporal_window']:g}s, "
+                       f"ổn định {cfg['temporal_hold']:g}s, "
+                       f"score ≥{cfg['temporal_confidence']*100:g}%, "
+                       f"margin ≥{cfg['temporal_margin']*100:g} điểm %. "
+                       "Tham số cần kiểm chứng với video có nhãn; giữ ảnh không chạy lặp.")
+        else:
+            message = "CONTROL READY: chế độ tương thích " + str(cfg.get("decision_mode"))
+        announce(message, flush=True)
 
     result = 0
     try:

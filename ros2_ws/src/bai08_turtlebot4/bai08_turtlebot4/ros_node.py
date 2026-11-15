@@ -155,6 +155,7 @@ class Motion(Node):
             vote_min=self.core.cfg["vote_min"],
             vote_window=self.core.cfg["vote_window"],
             decision_mode=self.core.cfg["decision_mode"],
+            temporal=self.core.temporal.snapshot,
             locked_label=self.core.locked_label,
             fault_latched=self.core.fault_latched,
             change_label=self.core.change_label,
@@ -162,7 +163,7 @@ class Motion(Node):
             armed=self.core.armed,
             enabled=self.core.enabled,
             permit_remaining_s=(
-                None if self.core.cfg["decision_mode"] == "events" else
+                None if self.core.event_mode else
                 max(0.0, self.core.armed_until - now) if self.core.armed else 0.0
             ),
             prepared=self.core.prepared,

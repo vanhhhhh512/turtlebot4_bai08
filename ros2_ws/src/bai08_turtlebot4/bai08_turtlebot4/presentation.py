@@ -36,7 +36,7 @@ class StatusPresenter:
         if not status.get("enabled"):
             self.stopped = None
             return "ĐÃ DỪNG — NHẤN START ĐỂ TIẾP TỤC"
-        if status.get("decision_mode") == "events":
+        if status.get("decision_mode") in ("events", "temporal"):
             return self.event_message(status)
         reason = status.get("reason")
         if reason in ERRORS:

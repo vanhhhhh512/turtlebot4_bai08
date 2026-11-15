@@ -41,6 +41,9 @@ def hold(label, seconds):
 
 
 def begin():
+    atomic(run / "ui_command.json", dict(session=run.name, seq=time.monotonic_ns(),
+           command="START", monotonic=time.monotonic()))
+    time.sleep(0.15)
     hold("neutral", 1.4)
     hold("fear", 1.5)
     s = read(run / "status.json")
@@ -59,7 +62,8 @@ fault_names = [
     "gui_stop",
     "change_label",
 ]
-vote_mode = read(run / "effective_config.json").get("decision_mode") == "votes"
+event_mode = read(run / "effective_config.json").get("decision_mode") == "events"
+vote_mode = read(run / "effective_config.json").get("decision_mode") in ("votes", "events")
 if vote_mode:
     # A new expression is deliberately ignored during a locked action.
     fault_names.remove("change_label")
@@ -125,19 +129,10 @@ for fault in fault_names:
     )
     print(results[-1], flush=True)
     atomic(run / "fault_tests.json", results)
-    if fault == "gui_stop":
-        atomic(
-            run / "ui_command.json",
-            dict(
-                session=run.name,
-                seq=time.monotonic_ns(),
-                command="START",
-                monotonic=time.monotonic(),
-            ),
-        )
-        time.sleep(0.2)
-    # Holding the old expression must not restart after fault.
-    hold("fear", 1.2)
-    assert not read(run / "status.json").get("action"), "Resumed stale action"
+    # Neutral deliberately opens a new round in event mode. Other faults
+    # must not resume the consumed expression without a release or START.
+    if not (event_mode and fault == "neutral"):
+        hold("fear", 1.2)
+        assert not read(run / "status.json").get("action"), "Resumed stale action"
 print("FAULT COMPONENT TESTS DONE", flush=True)
 sys.exit(0 if all(r["pass_"] for r in results) else 1)

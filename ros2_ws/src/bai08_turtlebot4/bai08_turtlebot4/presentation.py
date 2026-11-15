@@ -36,6 +36,8 @@ class StatusPresenter:
         if not status.get("enabled"):
             self.stopped = None
             return "ĐÃ DỪNG — NHẤN START ĐỂ TIẾP TỤC"
+        if status.get("decision_mode") == "events":
+            return self.event_message(status)
         reason = status.get("reason")
         if reason in ERRORS:
             self.stopped = ERRORS[reason]
@@ -54,6 +56,29 @@ class StatusPresenter:
         elif reason == "LOW_CONFIDENCE" and self.stopped is None:
             self.stopped = "BIỂU CẢM CHƯA RÕ — " + WAIT
         return self.stopped or WAIT
+
+    def event_message(self, status):
+        reason = status.get("reason")
+        fault = status.get("fault_latched")
+        if fault:
+            return ERRORS.get(fault, "ROBOT ĐÃ DỪNG") + " — NHẤN START ĐỂ TIẾP TỤC"
+        if reason == "NO_FACE":
+            return "CHỜ KHUÔN MẶT"
+        if reason in ERRORS:
+            return {"FACE_CHANGED": "KHUÔN MẶT THAY ĐỔI — CHỜ HÌNH MỚI",
+                    "OUTSIDE_SET": "DISGUST — ROBOT DỪNG"}.get(reason, ERRORS[reason])
+        action = status.get("action")
+        if action and status.get("state") == "EXECUTING":
+            return f"ĐÃ XÁC NHẬN: {action['label'].upper()} — ROBOT ĐANG CHẠY  #{action['id']}"
+        # A one-frame change candidate must not flash the main heading.
+        if status.get("locked_label") and status.get("state") in ("WAIT_RELEASE", "WAIT_CHANGE", "WAIT_INPUT"):
+            label = (status.get("locked_label") or "").upper()
+            return f"ĐÃ NHẬN: {label} — CHỜ BIỂU CẢM HOẶC LƯỢT MỚI"
+        if reason == "WAIT_PREDICTION":
+            return "ĐANG CHỜ HÌNH CAMERA MỚI"
+        if reason == "NEUTRAL_STOPPED":
+            return "ĐÃ XÁC NHẬN: NEUTRAL — ROBOT DỪNG, SẴN SÀNG LƯỢT MỚI"
+        return "SẴN SÀNG — TẠO BIỂU CẢM ĐỂ ĐIỀU KHIỂN"
 
 
 class TrajectoryPlot:

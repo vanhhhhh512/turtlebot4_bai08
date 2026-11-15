@@ -14,7 +14,7 @@ ap.add_argument(
 )
 a = ap.parse_args()
 run = Path(a.run)
-seq = 0
+seq = read(run / "prediction.json").get("seq", 0)
 
 
 def frame(label, **extra):
@@ -46,8 +46,11 @@ def hold(label, seconds):
 
 results = []
 for label in a.labels:
+    atomic(run / "ui_command.json", dict(session=run.name, seq=time.monotonic_ns(),
+           command="START", monotonic=time.monotonic()))
+    time.sleep(0.15)
     hold("neutral", 1.4)
-    # Explicit human-like uncertain transition: zero motion, unused permit survives.
+    # Explicit human-like uncertain transition: zero motion before the next clear expression.
     weak = {k: 0.0 for k in LABELS}
     weak.update(neutral=0.4, happy=0.45, sad=0.15)
     for _ in range(5):

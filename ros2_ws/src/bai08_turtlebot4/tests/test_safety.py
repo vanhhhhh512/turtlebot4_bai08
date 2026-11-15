@@ -234,7 +234,7 @@ class VoteSafety(unittest.TestCase):
     stable = Safety.stable
 
     def setUp(self):
-        self.c = Controller("test", {"vote_min": 4})
+        self.c = Controller("test", {"decision_mode": "votes", "vote_min": 4})
         self.t, self.seq = 10.0, 0
         self.pose = (0.0, 0.0, 3.0)
 
@@ -255,7 +255,7 @@ class VoteSafety(unittest.TestCase):
         self.assertEqual(self.c.counter, 1)
 
     def test_default_requires_more_than_ten_votes(self):
-        self.c = Controller("test")
+        self.c = Controller("test", {"decision_mode": "votes"})
         self.stable("neutral", 11)
         self.stable("happy", 10)
         self.assertIsNone(self.c.action)

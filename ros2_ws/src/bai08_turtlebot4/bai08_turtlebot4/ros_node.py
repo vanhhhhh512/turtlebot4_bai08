@@ -130,9 +130,8 @@ class Motion(Node):
         if cmd.get("session") == self.session and cmd.get("seq", -1) > self.cmd_seq:
             self.cmd_seq = cmd["seq"]
             if cmd.get("command") == "START" and now - cmd.get("monotonic", 0) < 1:
-                self.core.enabled = True
                 (self.run / "STOP").unlink(missing_ok=True)
-                self.core.cancel("START_REQUIRE_NEUTRAL", now)
+                self.core.request_start(now)
         p = read(self.run / "prediction.json")
         self.core.prediction(p, now) if p else None
         v, w = self.core.tick(now)
@@ -156,9 +155,14 @@ class Motion(Node):
             vote_min=self.core.cfg["vote_min"],
             vote_window=self.core.cfg["vote_window"],
             decision_mode=self.core.cfg["decision_mode"],
+            locked_label=self.core.locked_label,
+            fault_latched=self.core.fault_latched,
+            change_label=self.core.change_label,
+            change_count=self.core.change_count,
             armed=self.core.armed,
             enabled=self.core.enabled,
             permit_remaining_s=(
+                None if self.core.cfg["decision_mode"] == "events" else
                 max(0.0, self.core.armed_until - now) if self.core.armed else 0.0
             ),
             prepared=self.core.prepared,

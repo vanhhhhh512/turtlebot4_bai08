@@ -112,7 +112,7 @@ def close():
     root.destroy()
 
 
-ttk.Button(footer, text="START / chờ Neutral", command=start).pack(side="left")
+ttk.Button(footer, text="START", command=start).pack(side="left")
 tk.Button(
     footer,
     text="STOP",

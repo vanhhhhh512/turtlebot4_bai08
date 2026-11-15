@@ -16,7 +16,7 @@ def scores(label, score):
 
 class FastPath(unittest.TestCase):
     def setUp(self):
-        self.c = Controller("component", allow_test=True)
+        self.c = Controller("component", {"decision_mode": "votes"}, allow_test=True)
         self.now, self.seq = 10., 0
         self.pose = (0., 0., 0.)
 

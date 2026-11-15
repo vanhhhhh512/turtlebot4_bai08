@@ -5,7 +5,9 @@ from collections import Counter, deque
 
 LABELS = ("angry", "disgust", "fear", "happy", "sad", "surprise", "neutral")
 DEFAULT = dict(
-    decision_mode="votes",
+    decision_mode="events",
+    change_predictions=2,
+    face_release_seconds=1.0,
     vote_window=57,
     vote_min=11,
     vote_confidence=0.40,
@@ -55,6 +57,12 @@ class Controller:
         self.armed_until = -1e9
         self.action = None
         self.confirmation = None
+        self.locked_label = None
+        self.change_label, self.change_count = None, 0
+        self.absence_since = self.absence_last = None
+        self.fault_latched = None
+        self.ever_ready = False
+        self.accept_after = -1e9
         self.uncertain_since = None
         self.votes = deque(maxlen=int(self.cfg["vote_window"]))
         self.neutral_since = None
@@ -70,6 +78,18 @@ class Controller:
         self.events.append(dict(event=event, monotonic=now, **kw))
 
     def cancel(self, reason, now):
+        if self.cfg["decision_mode"] == "events":
+            hard = reason in {
+                "GUI_STOP", "OTHER_CMD_PUBLISHER", "OTHER_CLOCK_PUBLISHER", "HAZARD",
+                "ROBOT_NOT_PREPARED", "ODOM_STALE", "CLOCK_STALE", "BAD_ODOM",
+                "ODOM_JUMP", "ACTION_TIMEOUT", "CAMERA_ERROR", "INFERENCE_ERROR",
+                "MALFORMED_PREDICTION", "PREDICTION_STALE",
+            }
+            if hard and (self.ever_ready or self.action or reason == "GUI_STOP"):
+                self.fault_latched = self.fault_latched or reason
+            self.change_label, self.change_count = None, 0
+            if reason != "NO_FACE":
+                self.absence_since = self.absence_last = None
         if self.action:
             self.emit("ACTION_END", now, **self.action, reason=reason, pose=self.pose)
         self.action = None
@@ -131,6 +151,7 @@ class Controller:
             if (
                 not math.isfinite(stamp)
                 or stamp <= self.capture_at
+                or (self.cfg["decision_mode"] == "events" and stamp <= self.accept_after)
                 or stamp > now + 0.05
                 or now - stamp > self.cfg["prediction_timeout"]
             ):
@@ -143,18 +164,12 @@ class Controller:
                 or p.get("identity_changed")
             ):
                 self.raw = None
-                self.cancel(
-                    (
-                        p.get("status", "FACE_INVALID")
-                        if p.get("status") != "OK"
-                        else (
-                            "FACE_COUNT_MISMATCH"
-                            if p.get("faces") != 1
-                            else "FACE_CHANGED"
-                        )
-                    ),
-                    now,
-                )
+                reason = (p.get("status", "FACE_INVALID") if p.get("status") != "OK"
+                          else "FACE_COUNT_MISMATCH" if p.get("faces") != 1
+                          else "FACE_CHANGED")
+                self.cancel(reason, now)
+                if self.cfg["decision_mode"] == "events" and reason == "NO_FACE" and p.get("faces") == 0:
+                    self.observe_absence(now)
                 return True
             s = p["scores"]
             if (
@@ -171,6 +186,10 @@ class Controller:
             )
             if self.raw == "disgust":
                 self.cancel("OUTSIDE_SET", now)
+                return True
+            if self.cfg["decision_mode"] == "events":
+                self.absence_since = self.absence_last = None
+                self.event_prediction(s, raw, confident, now)
                 return True
             # Expiry must be checked before the new frame can launch an action.
             if self.armed and now > self.armed_until:
@@ -261,6 +280,96 @@ class Controller:
             self.cancel("MALFORMED_PREDICTION", now)
             return False
 
+    def request_start(self, now):
+        """An explicit START acknowledges faults and opens a fresh input round."""
+        self.enabled = True
+        self.cancel("START_WAIT_PREDICTION" if self.cfg["decision_mode"] == "events"
+                    else "START_REQUIRE_NEUTRAL", now)
+        if self.cfg["decision_mode"] == "events":
+            self.fault_latched = None
+            self.locked_label = None
+            self.accept_after = now
+            self.ever_ready = True
+            self.state, self.reason = "WAIT_INPUT", "WAIT_PREDICTION"
+
+    def release_expression(self, cause, now):
+        if self.locked_label is not None:
+            self.emit("EXPRESSION_RELEASED", now, label=self.locked_label,
+                      cause=cause, seq=self.last_seq, frame_id=self.last_frame)
+            self.locked_label = None
+            self.votes.clear()
+        self.change_label, self.change_count = None, 0
+
+    def observe_absence(self, now):
+        # Only consecutive, fresh NO_FACE packets count as a release gesture.
+        # Camera failure, silence, multiple faces and replay cannot unlock.
+        if not self.enabled or self.fault_latched:
+            return
+        if (self.absence_last is None or
+                self.capture_at - self.absence_last >= self.cfg["prediction_timeout"]):
+            self.absence_since = self.capture_at
+        self.absence_last = self.capture_at
+        if self.capture_at - self.absence_since >= self.cfg["face_release_seconds"]:
+            self.release_expression("face_absence", now)
+
+    def event_prediction(self, scores, order, neutral_confident, now):
+        """Initial input is immediate; only a consumed expression needs release."""
+        label = order[0]
+        if not self.enabled or not self.healthy(now) or self.fault_latched:
+            self.change_label, self.change_count = None, 0
+            return
+        self.ever_ready = True
+        fast = scores[label] > self.cfg["score_fast_threshold"]
+        accepted = (scores[label] >= self.cfg["vote_confidence"] and
+                    scores[label] - scores[order[1]] >= self.cfg["vote_margin"])
+        self.votes.append((self.capture_at, label if accepted else None))
+        if self.action:
+            self.running_prediction(scores, order, neutral_confident, now)
+            self.change_label, self.change_count = None, 0
+            if self.action is None and self.reason == "NEUTRAL":
+                self.release_expression("neutral", now)
+                self.armed = True
+                self.state, self.reason = "READY", "NEUTRAL_STOPPED"
+            return
+        counts = Counter(k for _, k in self.votes if k is not None)
+        if label == "neutral":
+            self.change_label, self.change_count = None, 0
+            if fast or (accepted and counts[label] >= self.cfg["vote_min"]):
+                if self.locked_label is not None or self.stable != "neutral":
+                    self.decision(label, scores, "score_fast_path" if fast else "vote_threshold", now)
+                self.release_expression("neutral", now)
+                self.stable = "neutral"
+            self.armed = self.locked_label is None
+            self.state, self.reason = ("READY", "WAIT_EXPRESSION") if self.armed else (
+                "WAIT_RELEASE", "EXPRESSION_HELD")
+            return
+        if not accepted:
+            self.change_label, self.change_count = None, 0
+            self.armed = self.locked_label is None
+            self.state, self.reason = "WAIT_INPUT", "LOW_CONFIDENCE_WAIT_INPUT"
+            return
+        if label == self.locked_label:
+            self.change_label, self.change_count = None, 0
+            self.armed = False
+            self.state, self.reason = "WAIT_RELEASE", "EXPRESSION_HELD"
+            return
+        if self.locked_label is not None:
+            if self.change_label != label:
+                self.change_label, self.change_count = label, 1
+            else:
+                self.change_count += 1
+            if self.change_count < self.cfg["change_predictions"]:
+                self.armed = False
+                self.state, self.reason = "WAIT_CHANGE", "CONFIRM_NEW_EXPRESSION"
+                return
+        self.armed = True
+        self.state, self.reason = "READY", "WAIT_VOTES"
+        if fast or counts[label] >= self.cfg["vote_min"]:
+            if not fast:
+                self.emit("VOTE_ACCEPTED", now, label=label, count=counts[label],
+                          window=len(self.votes), threshold=self.cfg["vote_min"])
+            self.accept_action(label, scores, "score_fast_path" if fast else "vote_threshold", now)
+
     def decision(self, label, scores, branch, now, action_id=None):
         """Audit the actual fresh prediction that confirmed a task."""
         self.confirmation = dict(
@@ -268,6 +377,9 @@ class Controller:
             seq=self.last_seq, frame_id=self.last_frame, capture_mono=self.capture_at,
             action_id=action_id, monotonic=now, pose=self.pose,
         )
+        if self.cfg["decision_mode"] == "events":
+            self.confirmation.update(previous_label=self.locked_label,
+                                     change_count=self.change_count)
         self.emit("DECISION_ACCEPTED", now,
                   **{k: v for k, v in self.confirmation.items() if k != "monotonic"})
 
@@ -282,28 +394,7 @@ class Controller:
         self.votes.append((self.capture_at, label if accepted else None))
         counts = Counter(k for _, k in self.votes if k is not None)
         if self.action:
-            self.stable = self.action["label"]
-            if label == "neutral" and fast:
-                action_id = self.action["id"]
-                self.cancel("NEUTRAL", now)
-                self.decision(label, scores, "score_fast_path", now, action_id)
-                return
-            if label == "neutral" and neutral_confident:
-                if self.neutral_since is None:
-                    self.neutral_since = now
-                elif now - self.neutral_since >= self.cfg["neutral_stop_hold"]:
-                    action_id = self.action["id"]
-                    self.cancel("NEUTRAL", now)
-                    self.decision(label, scores, "neutral_stop_hold", now, action_id)
-                    return
-            else:
-                self.neutral_since = None
-            if accepted:
-                self.uncertain_since = None
-            elif self.uncertain_since is None:
-                self.uncertain_since = now
-            elif now - self.uncertain_since >= self.cfg["vote_low_hold"]:
-                self.cancel("LOW_CONFIDENCE", now)
+            self.running_prediction(scores, order, neutral_confident, now)
             return
         if not self.enabled or not self.healthy(now):
             return
@@ -348,7 +439,37 @@ class Controller:
                 self.stable = label
                 self.accept_action(label, scores, "vote_threshold", now)
 
+    def running_prediction(self, scores, order, neutral_confident, now):
+        label = order[0]
+        fast = scores[label] > self.cfg["score_fast_threshold"]
+        accepted = (scores[label] >= self.cfg["vote_confidence"] and
+                    scores[label] - scores[order[1]] >= self.cfg["vote_margin"])
+        self.stable = self.action["label"]
+        if label == "neutral" and fast:
+            action_id = self.action["id"]
+            self.cancel("NEUTRAL", now)
+            self.decision(label, scores, "score_fast_path", now, action_id)
+            return
+        if label == "neutral" and neutral_confident:
+            if self.neutral_since is None:
+                self.neutral_since = now
+            elif now - self.neutral_since >= self.cfg["neutral_stop_hold"]:
+                action_id = self.action["id"]
+                self.cancel("NEUTRAL", now)
+                self.decision(label, scores, "neutral_stop_hold", now, action_id)
+                return
+        else:
+            self.neutral_since = None
+        if accepted:
+            self.uncertain_since = None
+        elif self.uncertain_since is None:
+            self.uncertain_since = now
+        elif now - self.uncertain_since >= self.cfg["vote_low_hold"]:
+            self.cancel("LOW_CONFIDENCE", now)
+        return
+
     def accept_action(self, label, scores, branch, now):
+        self.stable = label
         self.decision(label, scores, branch, now, self.counter + 1)
         self.start(label, now, {k: self.confirmation[k] for k in
                               ("branch", "score", "seq", "frame_id", "capture_mono")})
@@ -382,6 +503,9 @@ class Controller:
             **(decision or {}),
         )
         self.armed = False
+        if self.cfg["decision_mode"] == "events":
+            self.locked_label = label
+            self.change_label, self.change_count = None, 0
         self.state, self.reason = "EXECUTING", label
         self.emit("ACTION_START", now, **self.action)
 
@@ -394,13 +518,19 @@ class Controller:
             ("ROBOT_NOT_PREPARED", not self.prepared),
             ("ODOM_STALE", now - self.odom_at >= self.cfg["odom_timeout"]),
             ("CLOCK_STALE", now - self.clock_at >= self.cfg["clock_timeout"]),
-            ("PREDICTION_STALE", now - self.capture_at >= self.cfg["prediction_timeout"]),
+            ("PREDICTION_STALE", now - (max(self.capture_at, self.accept_after)
+              if self.cfg["decision_mode"] == "events" else self.capture_at)
+              >= self.cfg["prediction_timeout"]),
         )
         issue = next((reason for reason, active in issues if active), None)
         if issue:
             self.cancel(issue, now)
             return (0.0, 0.0)
-        if self.armed and now > self.armed_until:
+        if self.cfg["decision_mode"] == "events" and self.fault_latched:
+            self.state, self.reason = "FAULT", self.fault_latched
+            self.speed = (0.0, 0.0)
+            return self.speed
+        if self.cfg["decision_mode"] != "events" and self.armed and now > self.armed_until:
             self.cancel("REARM_WINDOW_EXPIRED", now)
         if self.action:
             a = self.action
@@ -426,7 +556,10 @@ class Controller:
                 self.action = None
                 self.votes.clear()
                 self.neutral_since = None
-                self.state, self.reason = "WAIT_NEUTRAL", "COMPLETED"
+                self.change_label, self.change_count = None, 0
+                self.state, self.reason = (
+                    "WAIT_RELEASE" if self.cfg["decision_mode"] == "events" else "WAIT_NEUTRAL",
+                    "COMPLETED")
             elif now - a["start"] > cfg["action_timeout"]:
                 self.cancel("ACTION_TIMEOUT", now)
             else:

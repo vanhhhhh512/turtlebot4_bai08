@@ -68,7 +68,14 @@ def hold(label, seconds):
         pump(0.08)
 
 
+def acknowledge():
+    atomic(run / "ui_command.json", dict(session=run.name, seq=time.monotonic_ns(),
+           command="START", monotonic=time.monotonic()))
+    pump(0.15)
+
+
 def begin():
+    acknowledge()
     hold("neutral", 1.4)
     hold("fear", 1.4)
     assert read(run / "status.json").get("action"), read(run / "status.json")
@@ -110,6 +117,7 @@ def service(pause):
 
 try:
     # Keep the same expression for several seconds after a finite action.
+    acknowledge()
     initial_end_count = sum(
         "ACTION_END" in l for l in (run / "control.jsonl").read_text().splitlines()
     )

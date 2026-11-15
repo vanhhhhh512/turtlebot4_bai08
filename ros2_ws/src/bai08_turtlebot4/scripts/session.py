@@ -202,7 +202,7 @@ def main():
             ),
         )
         announce(
-            "CONTROL READY: giữ Neutral để rearm; mỗi biểu cảm chỉ một action.",
+            "CONTROL READY: biểu cảm mới >60% nhận ngay; giữ ảnh không chạy lặp.",
             flush=True,
         )
 
@@ -282,7 +282,7 @@ def main():
                     + (
                         "COMPONENT TEST INPUT ONLY"
                         if a.component_test
-                        else "Giữ Neutral trước webcam để rearm."
+                        else "Đưa một khuôn mặt vào webcam để nhận biểu cảm."
                     ),
                     flush=True,
                 )

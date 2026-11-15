@@ -15,14 +15,14 @@ Webcam thật → YuNet detector + DeepFace 0.0.104 Emotion ONNX CPU → lọc t
 
 Bộ chốt mặc định dùng `decision_mode=events`, tách nhận lệnh mới khỏi khóa chống chạy lặp:
 
-- Khi đã START, robot khỏe và có một prediction mới hợp lệ **top-1>0.60**, lượt đầu chạy ngay, không cần Neutral, không hold/EMA/11 phiếu. So giá trị thật:0.6000 chưa đủ nhánh nhanh,0.6001 đủ dù UI làm tròn thành60.0%.
+- Khi đã START, robot khỏe và có một prediction mới hợp lệ **top-1>0.57**, lượt đầu chạy ngay, không cần Neutral, không hold/EMA/11 phiếu. So giá trị thật:0.5700 chưa đủ nhánh nhanh,0.5701 đủ dù UI làm tròn thành57.0%.
 - Một action hữu hạn khóa biểu cảm đã nhận. Giữ nguyên biểu cảm sau khi xong không phát lại. Trong lúc chạy, biểu cảm khác không chen lệnh, không được xếp hàng cho lượt sau.
-- Sau khi action hết hoặc bị hủy, biểu cảm khác cần **2 prediction hợp lệ liên tiếp** của chính biểu cảm đó. Chỉ đếm từ sau khi action kết thúc; prediction cũ, yếu hoặc mất mặt ngắt chuỗi. Khi đủ điều kiện, score>0.60 chạy ngay ở prediction thứ hai.
+- Sau khi action hết hoặc bị hủy, biểu cảm khác cần **2 prediction hợp lệ liên tiếp** của chính biểu cảm đó. Chỉ đếm từ sau khi action kết thúc; prediction cũ, yếu hoặc mất mặt ngắt chuỗi. Khi đủ điều kiện, score>0.57 chạy ngay ở prediction thứ hai.
 - Muốn lặp cùng biểu cảm: Neutral được xác nhận, hoặc đưa mặt/ảnh ra khỏi camera **ít nhất1s**, rồi đưa lại. Chỉ các packet NO_FACE mới liên tục được tính; camera lỗi, mất prediction, replay hoặc nhiều mặt không mở khóa.
 - Mất mặt khi đang chờ chỉ chuyển sang chờ khuôn mặt. Khi đang chạy, mất mặt vẫn dừng/hủy ngay; biểu cảm đã tiêu thụ vẫn khóa, không tự tiếp tục action cũ khi mặt trở lại.
-- Score≤0.60 dùng **11 phiếu trong57 prediction** dự phòng; mỗi phiếu top-1≥0.40, margin≥0.06. Số phiếu trên UI luôn là dữ liệu thật, không nâng thành11 khi nhánh nhanh đã chấp thuận.
+- Score≤0.57 dùng **11 phiếu trong57 prediction** dự phòng; mỗi phiếu top-1≥0.40, margin≥0.06. Số phiếu trên UI luôn là dữ liệu thật, không nâng thành11 khi nhánh nhanh đã chấp thuận.
 
-Neutral>0.60 vẫn dừng ngay và mở lượt mới; Neutral≤0.60 dùng11 phiếu để mở lại cùng biểu cảm. Khi đang chạy, Neutral rõ (score≥0.55, margin≥0.18) liên tục0.8s vẫn có quyền dừng; điểm yếu kéo dài0.5s hủy. Disgust/mất mặt/nhiều mặt vẫn STOP, không gán thành một chuyển động khác.
+Neutral>0.57 vẫn dừng ngay và mở lượt mới; Neutral≤0.57 dùng11 phiếu để mở lại cùng biểu cảm. Khi đang chạy, Neutral rõ (score≥0.55, margin≥0.18) liên tục0.8s vẫn có quyền dừng; điểm yếu kéo dài0.5s hủy. Disgust/mất mặt/nhiều mặt vẫn STOP, không gán thành một chuyển động khác.
 
 STOP, lỗi camera/model, hazard, odom/clock quá hạn, trùng publisher, timeout action hoặc prediction quá hạn được giữ khóa sau khi đã hoạt động: sửa lỗi rồi bấm START để xác nhận mở lại. START yêu cầu frame được capture sau lệnh; không chạy prediction tồn từ trước START. Watchdog prediction0.9s, odom0.5s, clock0.6s vẫn giữ. Không còn permitNeutral8s trong chế độ mới. Cấu hình `votes`/`ema` cũ còn để tái tạo các run trước; không phải mặc định hiện hành. Các ngưỡng là thiết kế, không phải accuracy.
 
@@ -65,7 +65,7 @@ bash start_demo.sh
 
 Webcam mặc định `/dev/video0`; đổi bằng `--camera 2`. Khi robot undock/controller/clock/odom và model warm đều sẵn sàng, recorder chờ đúng cửa sổ cùng session rồi tự quay. Launcher giữ STOP lúc khởi động; chỉ bật chờ Neutral sau khi FFmpeg thực sự tạo file. Truy vấn khóa màn hình lỗi tạm thời được thử lại; ba lỗi liên tiếp dừng có kiểm soát. Cleanup vẫn tiếp tục nếu terminal đóng hoặc một tiến trình kết thúc lỗi. GNOME idle được inhibit trong phiên demo (không đổi setting lâu dài); khóa màn hình bằng tay vẫn làm STOP và finalize. Không có âm thanh mặc định. Bật micro bằng `--microphone TEN_SOURCE`.
 
-Đưa một khuôn mặt/ảnh vào khung khi hệ thống sẵn sàng. Lượt đầu>60% chạy ngay. Giữ nguyên ảnh không chạy lặp; đổi sang biểu cảm khác cần2prediction mới liên tiếp sau khi action hết. Dùng Neutral hoặc đưa ảnh ra≥1s để lặp cùng biểu cảm. Surprise cần khoảng18s ở0.35rad/s. STOP và lỗi robot giữ khóa đến START. **Ctrl+C một lần**: latch STOP ngay, chờ robot dừng, FFmpeg nhận `q` để finalize rồi đóng đúng nhóm process. Không kill rộng hoặc kill-9 recorder.
+Đưa một khuôn mặt/ảnh vào khung khi hệ thống sẵn sàng. Lượt đầu>57% chạy ngay. Giữ nguyên ảnh không chạy lặp; đổi sang biểu cảm khác cần2prediction mới liên tiếp sau khi action hết. Dùng Neutral hoặc đưa ảnh ra≥1s để lặp cùng biểu cảm. Surprise cần khoảng18s ở0.35rad/s. STOP và lỗi robot giữ khóa đến START. **Ctrl+C một lần**: latch STOP ngay, chờ robot dừng, FFmpeg nhận `q` để finalize rồi đóng đúng nhóm process. Không kill rộng hoặc kill-9 recorder.
 
 ## Log và kiểm chứng
 

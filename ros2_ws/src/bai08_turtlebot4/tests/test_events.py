@@ -43,18 +43,19 @@ class Events(unittest.TestCase):
 
     def test_default_first_prediction_starts_without_neutral(self):
         self.assertEqual(self.c.cfg['decision_mode'],'events')
+        self.assertEqual(self.c.cfg['score_fast_threshold'],.57)
         for label,cmd in [('happy',(.1,.35)),('sad',(.1,-.35)),('angry',(-.1,0)),
                           ('fear',(.1,0)),('surprise',(0,.35))]:
             self.setUp()
-            self.assertEqual(self.frame(label,.6001),cmd)
+            self.assertEqual(self.frame(label,.5701),cmd)
             self.assertEqual(self.c.counter,1)
             self.assertEqual(self.c.action['frame_id'],1)
             self.assertEqual(self.c.confirmation['branch'],'score_fast_path')
 
-    def test_exact_sixty_requires_eleven_real_votes(self):
+    def test_exact_fifty_seven_requires_eleven_real_votes(self):
         for _ in range(10):
-            self.frame('fear',.6);self.assertIsNone(self.c.action)
-        self.frame('fear',.6)
+            self.frame('fear',.57);self.assertIsNone(self.c.action)
+        self.frame('fear',.57)
         self.assertEqual(self.c.action['branch'],'vote_threshold')
         self.assertEqual(len(self.c.votes),11)
 
@@ -139,8 +140,8 @@ class Events(unittest.TestCase):
     def test_neutral_low_score_releases_only_at_vote_threshold(self):
         self.frame('fear');self.finish()
         for _ in range(10):
-            self.frame('neutral',.6);self.assertEqual(self.c.locked_label,'fear')
-        self.frame('neutral',.6);self.assertIsNone(self.c.locked_label)
+            self.frame('neutral',.57);self.assertEqual(self.c.locked_label,'fear')
+        self.frame('neutral',.57);self.assertIsNone(self.c.locked_label)
         self.frame('fear');self.assertEqual(self.c.counter,2)
 
     def test_hard_faults_need_start_even_after_health_recovers(self):

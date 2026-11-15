@@ -12,7 +12,9 @@ ap=argparse.ArgumentParser(description=__doc__)
 ap.add_argument('run',type=Path)
 run=ap.parse_args().run
 assert read(run/'session.json')['source']=='component_test'
-assert read(run/'effective_config.json')['decision_mode']=='events'
+cfg=read(run/'effective_config.json')
+assert cfg['decision_mode']=='events'
+threshold=cfg['score_fast_threshold']
 seq=read(run/'prediction.json').get('seq',0)
 results=[]
 
@@ -45,7 +47,7 @@ def check(name,condition,**evidence):
 
 try:
     start()
-    s=send('fear',.6001)
+    s=send('fear',threshold+.0001)
     check('first_high_frame_without_neutral',bool(s['action']) and s['action']['seq']==seq)
     first=s['action']['id']
     deadline=time.monotonic()+8
@@ -72,12 +74,12 @@ try:
     check('stop_cannot_be_bypassed_by_high_score',not s['action'] and not s['enabled'])
     start()
     for i in range(10):
-        s=send('fear',.6000)
+        s=send('fear',threshold)
         assert not s['action'],s
-    s=send('fear',.6000)
-    check('sixty_percent_uses_eleven_vote_fallback',bool(s['action']) and
+    s=send('fear',threshold)
+    check('threshold_boundary_uses_eleven_vote_fallback',bool(s['action']) and
           s['action']['branch']=='vote_threshold' and s['vote_counts']['fear']==11)
-    s=send('neutral',.6001)
+    s=send('neutral',threshold+.0001)
     check('neutral_stops_and_opens_new_round',not s['action'] and s['locked_label'] is None)
 finally:
     (run/'STOP').touch()

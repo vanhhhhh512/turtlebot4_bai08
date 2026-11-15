@@ -12,7 +12,7 @@ DEFAULT = dict(
     vote_min=11,
     vote_confidence=0.40,
     vote_margin=0.06,
-    score_fast_threshold=0.60,
+    score_fast_threshold=0.57,
     neutral_stop_hold=0.80,
     vote_low_hold=0.50,
     confidence=0.55,
@@ -384,7 +384,7 @@ class Controller:
                   **{k: v for k, v in self.confirmation.items() if k != "monotonic"})
 
     def vote_prediction(self, scores, order, neutral_confident, now):
-        """One fresh score > .60 has priority; 11/57 remains the fallback."""
+        """One fresh score above the configured threshold has priority; 11/57 remains the fallback."""
         label = order[0]
         fast = scores[label] > self.cfg["score_fast_threshold"]
         accepted = (

@@ -202,7 +202,9 @@ def main():
             ),
         )
         announce(
-            "CONTROL READY: biểu cảm mới >60% nhận ngay; giữ ảnh không chạy lặp.",
+            "CONTROL READY: biểu cảm mới >"
+            + format(read(run / "effective_config.json").get("score_fast_threshold", .57) * 100, "g")
+            + "% nhận ngay; giữ ảnh không chạy lặp.",
             flush=True,
         )
 

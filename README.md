@@ -1,6 +1,6 @@
 # TurtleBot 4 — Bài thực hành 8
 
-Nhận diện biểu cảm khuôn mặt bằng DeepFace kết hợp OpenCV, điều khiển TurtleBot 4 qua `/cmd_vel`. Sinh viên: Đỗ Việt Anh — 23020719 — K68E-RE.
+Nhận diện biểu cảm khuôn mặt bằng DeepFace kết hợp OpenCV, điều khiển TurtleBot 4 qua `/cmd_vel`.
 
 ## Môi trường
 
@@ -28,8 +28,6 @@ BAI08_UNDERLAY="$PWD/underlay" bash tools/build.sh
 bash start_demo.sh
 ```
 
-Script tải model và dựng Create 3 underlay riêng trong thư mục bài. Mỗi lần chạy mở phiên mô phỏng mới và tự quay WebM. Webcam mặc định là `/dev/video0`; dùng `bash start_demo.sh --camera 2` để đổi thiết bị.
-
 ## Nhận diện và quan sát
 
 Chờ robot và model sẵn sàng rồi đưa một khuôn mặt hoặc ảnh vào webcam, giữ ổn định và chờ robot hoàn thành trước khi đổi biểu cảm.
@@ -43,21 +41,6 @@ Chờ robot và model sẵn sàng rồi đưa một khuôn mặt hoặc ảnh v�
 | Surprise | Xoay một vòng tại chỗ |
 | Fear | Tiến nhẹ |
 
-Chương trình lấy trung bình điểm trong khoảng ngắn, yêu cầu nhãn đứng đầu ổn định và cách nhãn thứ hai đủ rõ mới chốt lệnh. Giữ nguyên ảnh sau khi chạy xong không làm robot chạy lặp; muốn lặp cùng biểu cảm, dùng Neutral hoặc đưa ảnh ra khỏi camera ít nhất một giây rồi đưa lại.
+Chương trình lấy trung bình điểm trong khoảng ngắn, yêu cầu nhãn đứng đầu ổn định và cách nhãn thứ hai đủ rõ mới chốt lệnh.
 
-Nút **STOP** dừng robot, **START** cho nhận lệnh trở lại. Phím **1** hiện điểm trung bình, phím **2** ẩn. **Ctrl+C một lần** để dừng phiên và lưu video.
-
-## Ghi log và quay demo thật
-
-Video demo: [Google Drive — Bài 08](https://drive.google.com/drive/folders/1mC_FsxIAmWkDnlv-FoevSnmVOLaaXxNr?usp=sharing).
-
-Video tự lưu tại `results/demo_<id>.webm`. Thư mục `runs/<id>/` lưu kết quả nhận diện, lệnh điều khiển, odom và cấu hình của phiên. Không đóng cửa sổ hoặc khóa màn hình khi đang quay.
-
-## File chính
-
-- `start_demo.sh`: mở mô phỏng, nhận diện và quay demo.
-- `ros2_ws/src/bai08_turtlebot4/`: node ROS, worker nhận diện, giao diện và cấu hình điều khiển.
-- [DEMO_GUIDE.md](DEMO_GUIDE.md): thao tác chạy và quay demo.
-- [TEMPORAL_EVALUATION.md](TEMPORAL_EVALUATION.md): cơ chế chốt biểu cảm và cách đánh giá tham số.
-
-Repo chứa mã nguồn và cấu hình; model, video, log và báo cáo lưu riêng.
+Nút **STOP** dừng robot, **START** cho nhận lệnh trở lại.

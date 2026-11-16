@@ -49,6 +49,8 @@ Nút **STOP** dừng robot, **START** cho nhận lệnh trở lại. Phím **1**
 
 ## Ghi log và quay demo thật
 
+Video demo: [Google Drive — Bài 08](https://drive.google.com/drive/folders/1mC_FsxIAmWkDnlv-FoevSnmVOLaaXxNr?usp=sharing).
+
 Video tự lưu tại `results/demo_<id>.webm`. Thư mục `runs/<id>/` lưu kết quả nhận diện, lệnh điều khiển, odom và cấu hình của phiên. Không đóng cửa sổ hoặc khóa màn hình khi đang quay.
 
 ## File chính
